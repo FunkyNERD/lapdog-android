@@ -1,64 +1,108 @@
 package io.hazaar.lapdog.transport
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.hardware.usb.UsbManager
 import android.util.Log
 import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.ProbeTable
+import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
-import io.hazaar.lapdog.protocol.LapFrame
+import io.hazaar.lapdog.protocol.TimerLine
+import io.hazaar.lapdog.service.LapRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /**
- * Reads `F:<hex>` lines from the timer's native USB (Espressif USB Serial/JTAG, CDC-ACM).
- * USB permission comes from the device_filter intent filter when the timer is plugged in.
+ * The timer's native USB (Espressif USB Serial/JTAG, CDC-ACM): reads `F:`/`S:`/`R:`/OK
+ * lines and writes console commands. Waits for the timer to be plugged in, asks for
+ * permission once if the device_filter intent didn't already grant it, and reconnects
+ * after an unplug.
  */
 class UsbTransport(private val context: Context) : Transport {
     override val name = "USB"
 
-    override fun frames(): Flow<LapFrame> = flow {
-        val manager = context.getSystemService(UsbManager::class.java) ?: return@flow
-        val driver = prober.findAllDrivers(manager).firstOrNull() ?: run {
-            Log.i(TAG, "no timer attached")
-            return@flow
+    override suspend fun run() = withContext(Dispatchers.IO) {
+        val manager = context.getSystemService(UsbManager::class.java) ?: return@withContext
+        var asked = false
+        while (isActive) {
+            val driver = prober.findAllDrivers(manager).firstOrNull()
+            if (driver == null) {
+                asked = false
+                delay(POLL_MS)
+                continue
+            }
+            if (!manager.hasPermission(driver.device)) {
+                if (!asked) {
+                    asked = true
+                    val intent = Intent(ACTION_PERMISSION).setPackage(context.packageName)
+                    manager.requestPermission(
+                        driver.device,
+                        PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_MUTABLE),
+                    )
+                }
+                delay(POLL_MS)
+                continue
+            }
+            val connection = manager.openDevice(driver.device)
+            if (connection == null) {
+                delay(POLL_MS)
+                continue
+            }
+            val port = driver.ports.first()
+            try {
+                port.open(connection)
+                port.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+                port.dtr = true
+                session(port)
+            } catch (e: IOException) {
+                Log.i(TAG, "USB closed: ${e.message}")
+            } finally {
+                LapRepository.onUsb(false)
+                runCatching { port.close() }
+            }
+            delay(POLL_MS)
         }
-        if (!manager.hasPermission(driver.device)) {
-            Log.w(TAG, "no USB permission for ${driver.device.deviceName}")
-            return@flow
+    }
+
+    private suspend fun session(port: UsbSerialPort) = coroutineScope {
+        LapRepository.onUsb(true)
+        val writer = launch {
+            for (cmd in LapRepository.outgoing) port.write("$cmd\n".toByteArray(), WRITE_TIMEOUT_MS)
         }
-        val connection = manager.openDevice(driver.device) ?: return@flow
-        val port = driver.ports.first()
+        launch { LapRepository.refresh() }
         try {
-            port.open(connection)
-            port.setParameters(115200, 8, 1, 0)
-            port.dtr = true
-            val buf = ByteArray(256)
+            val buf = ByteArray(512)
             val line = StringBuilder()
-            while (true) {
-                val n = port.read(buf, 0)
+            while (isActive) {
+                val n = port.read(buf, READ_TIMEOUT_MS)
                 for (i in 0 until n) {
-                    val c = buf[i].toInt().toChar()
+                    val c = (buf[i].toInt() and 0xFF).toChar()
                     if (c == '\n') {
-                        LapFrame.fromLine(line.toString())?.let { emit(it) }
+                        TimerLine.parse(line.toString())?.let(LapRepository::onLine)
                         line.clear()
                     } else if (line.length < 256) {
                         line.append(c)
                     }
                 }
             }
-        } catch (e: IOException) {
-            Log.i(TAG, "USB closed: ${e.message}")
         } finally {
-            runCatching { port.close() }
+            writer.cancel()
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     private companion object {
         const val TAG = "UsbTransport"
+        const val ACTION_PERMISSION = "io.hazaar.lapdog.USB_PERMISSION"
+        const val POLL_MS = 1500L
+        const val READ_TIMEOUT_MS = 200
+        const val WRITE_TIMEOUT_MS = 500
         val prober = UsbSerialProber(
             ProbeTable().addProduct(0x303A, 0x1001, CdcAcmSerialDriver::class.java)
         )

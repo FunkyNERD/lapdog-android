@@ -4,46 +4,69 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapService
+import io.hazaar.lapdog.ui.theme.Hud
+import io.hazaar.lapdog.ui.theme.LapDogTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val permissions = ActivityResultContracts.RequestMultiplePermissions()
     private val requestPermissions = registerForActivityResult(permissions) { LapService.start(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Hud.bg.toArgb()),
+            navigationBarStyle = SystemBarStyle.dark(Hud.bg.toArgb()),
+        )
         super.onCreate(savedInstanceState)
+        // Listen from the start: USB and BLE both run in the foreground service.
+        requestPermissions.launch(neededPermissions())
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            LapDogTheme {
                 val state by LapRepository.state.collectAsStateWithLifecycle()
-                LapScreen(
-                    state = state,
-                    onStart = { requestPermissions.launch(neededPermissions()) },
-                    onStop = { LapService.stop(this) },
-                    onClear = LapRepository::clear,
-                )
+                val running by LapRepository.running.collectAsStateWithLifecycle()
+                var settings by rememberSaveable { mutableStateOf(false) }
+                var message by remember { mutableStateOf<String?>(null) }
+                val scope = rememberCoroutineScope()
+
+                fun command(vararg c: String) {
+                    message = null
+                    scope.launch {
+                        val r = LapRepository.send(*c)
+                        if (r is LapRepository.Result.Failed) message = "Timer: ${r.reason} (${r.command})"
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().background(Hud.bg).safeDrawingPadding()) {
+                    val session = state.session
+                    when {
+                        settings -> SettingsScreen(state, onBack = { settings = false })
+                        session != null && state.armed && session.mode == Mode.RACE ->
+                            RaceScreen(state, session, message, onRestart = { command("restart") }, onStop = { command("disarm") })
+                        session != null && state.armed ->
+                            PracticeScreen(state, session, message, onNewHeat = { command("heat next") }, onDisarm = { command("disarm") })
+                        else -> IdleScreen(state, running, message, onSettings = { settings = true }, onArm = { command(it.command) })
+                    }
+                }
             }
         }
     }
@@ -53,35 +76,5 @@ class MainActivity : ComponentActivity() {
             arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.POST_NOTIFICATIONS)
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> arrayOf(Manifest.permission.BLUETOOTH_SCAN)
         else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
-}
-
-fun formatLap(ms: Long) = "%d:%02d.%03d".format(ms / 60000, (ms / 1000) % 60, ms % 1000)
-
-@Composable
-fun LapScreen(state: LapRepository.State, onStart: () -> Unit, onStop: () -> Unit, onClear: () -> Unit) {
-    Scaffold { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                when {
-                    !state.running -> "Stopped"
-                    state.armed -> "Armed" + (state.lastHeard?.let { " · $it" } ?: "")
-                    else -> "Waiting for timer…"
-                },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(state.laps.lastOrNull()?.let(::formatLap) ?: "--:--.---", fontSize = 56.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.running) Button(onClick = onStop) { Text("Stop") } else Button(onClick = onStart) { Text("Start") }
-                OutlinedButton(onClick = onClear) { Text("Clear") }
-            }
-            val best = state.laps.minOrNull()
-            LazyColumn(Modifier.fillMaxWidth()) {
-                itemsIndexed(state.laps.reversed()) { i, lap ->
-                    val n = state.laps.size - i
-                    Text("Lap $n   ${formatLap(lap)}" + if (lap == best) "   best" else "")
-                }
-            }
-        }
     }
 }

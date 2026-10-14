@@ -1,10 +1,10 @@
 package io.hazaar.lapdog.transport
 
-import io.hazaar.lapdog.protocol.LapFrame
-import kotlinx.coroutines.flow.Flow
-
-/** A source of LapDog frames. Every transport feeds the same parser and the same UI. */
+/**
+ * A link to the timer. Each runs until cancelled and feeds LapRepository; every
+ * transport delivers the same LapDog frames to the same model.
+ */
 interface Transport {
     val name: String
-    fun frames(): Flow<LapFrame>
+    suspend fun run()
 }

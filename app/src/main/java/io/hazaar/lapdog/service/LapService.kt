@@ -1,12 +1,16 @@
 package io.hazaar.lapdog.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.Build
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.hazaar.lapdog.transport.BleTransport
@@ -17,8 +21,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Foreground service so laps keep arriving with goggles on and the phone screen off.
- * Runs every transport at once; the same lap can arrive over USB and BLE, which is fine
- * for now (TODO: de-dupe across transports by seq).
+ * Runs every transport at once; TimerModel drops the copies that arrive over both.
  */
 class LapService : LifecycleService() {
     private val jobs = mutableListOf<Job>()
@@ -31,8 +34,13 @@ class LapService : LifecycleService() {
         )
         if (jobs.isEmpty()) {
             LapRepository.setRunning(true)
-            listOf<Transport>(UsbTransport(this), BleTransport(this)).forEach { t ->
-                jobs += lifecycleScope.launch { t.frames().collect { LapRepository.onFrame(it, t.name) } }
+            // BLE scanning needs the runtime permission; without it, USB still works.
+            val transports = buildList<Transport> {
+                add(UsbTransport(this@LapService))
+                if (canScan()) add(BleTransport(this@LapService))
+            }
+            transports.forEach { t ->
+                jobs += lifecycleScope.launch { t.run() }
             }
         }
         return START_STICKY
@@ -42,6 +50,12 @@ class LapService : LifecycleService() {
         jobs.forEach { it.cancel() }
         LapRepository.setRunning(false)
         super.onDestroy()
+    }
+
+    private fun canScan(): Boolean {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Manifest.permission.BLUETOOTH_SCAN
+        else Manifest.permission.ACCESS_FINE_LOCATION
+        return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun notification(): Notification {
