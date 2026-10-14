@@ -13,6 +13,9 @@ data class TimerSettings(
     val exitDb: Float = 5f,
     val alpha: Float = 0.2f,
     val minLapMs: Int = 3000,
+    /** Reject peaks longer than [maxPeakMs]: a quad parked at the gate. */
+    val ignoreParked: Boolean = true,
+    val maxPeakMs: Int = 1500,
     val link: Link = Link.BLE,
     val bindPhrase: String = "",
     val event: String = "",
@@ -69,6 +72,8 @@ data class TimerSettings(
         }
         set("alpha", fmt2(alpha), fmt2(current.alpha))
         set("minlap", minLapMs, current.minLapMs)
+        set("park", onOff(ignoreParked), onOff(current.ignoreParked))
+        set("maxpeak", maxPeakMs, current.maxPeakMs)
         set("link", link.key, current.link.key)
         set("phrase", bindPhrase, current.bindPhrase)
         set("event", event, current.event)
@@ -99,6 +104,8 @@ data class TimerSettings(
         "exit" -> v.toFloatOrNull()?.let { copy(exitDb = it) } ?: this
         "alpha" -> v.toFloatOrNull()?.let { copy(alpha = it) } ?: this
         "minlap" -> v.toIntOrNull()?.let { copy(minLapMs = it) } ?: this
+        "park" -> copy(ignoreParked = v == "on")
+        "maxpeak" -> v.toIntOrNull()?.let { copy(maxPeakMs = it) } ?: this
         "link" -> Link.entries.firstOrNull { it.key == v }?.let { copy(link = it) } ?: this
         "phrase" -> copy(bindPhrase = v)
         "event" -> copy(event = v)
@@ -126,6 +133,10 @@ data class TimerSettings(
         const val EVENT_MAX = 40
         const val PREFIX_MAX = 16
         const val MSG_MAX = 16
+
+        /** Minimum lap time stepper: 0.5 s steps, 1-30 s (the timer accepts the same range). */
+        const val MIN_LAP_STEP_MS = 500
+        val MIN_LAP_RANGE_MS = 1000..30000
 
         private fun fmt(v: Float) = "%.1f".format(java.util.Locale.ROOT, v)
         private fun fmt2(v: Float) = "%.2f".format(java.util.Locale.ROOT, v)

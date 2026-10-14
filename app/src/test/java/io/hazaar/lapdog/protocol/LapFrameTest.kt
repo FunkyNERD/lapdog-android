@@ -12,7 +12,8 @@ class LapFrameTest {
     private val vectors = mapOf(
         "212A03020139300000" to LapFrame.Lap(42, 3, lap = 2, flags = LapFrame.FLAG_BEST, ms = 12345),
         "220100010400030000" to LapFrame.Armed(1, 0, Mode.RACE, heat = 4, lapLimit = 3, timeLimitS = 0),
-        "230A0004000C" to LapFrame.Disarmed(10, 0, heat = 4, laps = 12),
+        "230A0004000C02" to LapFrame.Disarmed(10, 0, heat = 4, laps = 12, ignored = 2),
+        "270B0001E803000003" to LapFrame.Ignored(11, 0, LapFrame.Reason.TOO_SOON, ms = 1000, count = 3),
         "24090003010400A0860100" to LapFrame.Heartbeat(9, 0, Stage.RACING, Mode.RACE, heat = 4, uptimeMs = 100000),
         "25050004C8AF0000" to LapFrame.Race(5, 0, Stage.FINISHED, raceMs = 45000),
         "260700810148656174" to LapFrame.Text(7, 0, LapFrame.SLOT_HEAT_PREFIX, 0, 1, "Heat"),

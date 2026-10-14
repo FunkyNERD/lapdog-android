@@ -4,6 +4,8 @@ Companion Android app for the LapDog FPV lap timer. It receives lap frames over 
 
 **Status:** dark race-HUD UI from the design canvas: idle (practice/race), armed practice, race with the "From the timer" message panel, and settings that write back to the timer over USB. Not yet tried against a real timer; validate the BLE burst with nRF Connect first.
 
+False-read protection lives on the timer (minimum lap time, ignore parked quads); the app edits it in Settings and shows passes the timer ignored as a red note per heat.
+
 The **timer** is the source of truth for event name, heat prefix and heat number. The app reads them (USB `get`, or BLE `TEXT`/`ARMED` frames) and only changes them by sending `set …` + `save`. Radio output is exclusive: with the timer on ESP-NOW the app hears it only over USB.
 
 ## Build

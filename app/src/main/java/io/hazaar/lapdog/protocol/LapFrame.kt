@@ -13,9 +13,11 @@ package io.hazaar.lapdog.protocol
  *   [2] pilot u8
  *   LAP       [3] lap (0 = start / holeshot) [4] flags [5..8] ms u32
  *   ARMED     [3] mode [4..5] heat u16 [6] lap limit [7..8] time limit s u16
- *   DISARMED  [3..4] heat u16 [5] laps completed
+ *   DISARMED  [3..4] heat u16 [5] laps completed [6] passes ignored
  *   HEARTBEAT [3] stage [4] mode [5..6] heat u16 [7..10] uptime ms u32
  *   RACE      [3] stage [4..7] race time ms u32 (since GO)
+ *   IGNORED   [3] reason [4..7] ms u32 (too soon: since last lap; too long: peak length)
+ *             [8] passes ignored so far this heat
  *   TEXT      [3] slot [4] part<<4 | parts [5..] text (<= 19 bytes)
  */
 sealed interface LapFrame {
@@ -32,7 +34,19 @@ sealed interface LapFrame {
         val mode: Mode, val heat: Int, val lapLimit: Int, val timeLimitS: Int,
     ) : LapFrame
 
-    data class Disarmed(override val seq: Int, override val pilot: Int, val heat: Int, val laps: Int) : LapFrame
+    data class Disarmed(override val seq: Int, override val pilot: Int, val heat: Int, val laps: Int, val ignored: Int) : LapFrame
+
+    /** A gate pass the timer's false-read protection rejected. */
+    data class Ignored(override val seq: Int, override val pilot: Int, val reason: Reason, val ms: Long, val count: Int) : LapFrame
+
+    enum class Reason(val code: Int) {
+        /** Within the minimum lap time: a crash into the gate or a bounce back through it. */
+        TOO_SOON(1),
+        /** Peak too long: a quad parked at the gate. */
+        TOO_LONG(2);
+
+        companion object { fun of(v: Int) = if (v == 2) TOO_LONG else TOO_SOON }
+    }
 
     data class Heartbeat(
         override val seq: Int, override val pilot: Int,
@@ -67,6 +81,7 @@ sealed interface LapFrame {
         const val HEARTBEAT = 4
         const val RACE = 5
         const val TEXT = 6
+        const val IGNORED = 7
 
         const val FLAG_BEST = 0x01
         const val FLAG_FINAL = 0x02
@@ -77,7 +92,7 @@ sealed interface LapFrame {
         const val SLOT_HEAT_PREFIX = 0x81
 
         private fun bodySize(type: Int) = when (type) {
-            LAP -> 6; ARMED -> 6; DISARMED -> 3; HEARTBEAT -> 8; RACE -> 5; TEXT -> 2; else -> 0
+            LAP -> 6; ARMED -> 6; DISARMED -> 4; HEARTBEAT -> 8; RACE -> 5; TEXT -> 2; IGNORED -> 6; else -> 0
         }
 
         fun decode(b: ByteArray, offset: Int = 0, length: Int = b.size - offset): LapFrame? {
@@ -94,7 +109,8 @@ sealed interface LapFrame {
             return when (type) {
                 LAP -> Lap(seq, pilot, u8(3), u8(4), u32(5))
                 ARMED -> Armed(seq, pilot, Mode.of(u8(3)), u16(4), u8(6), u16(7))
-                DISARMED -> Disarmed(seq, pilot, u16(3), u8(5))
+                DISARMED -> Disarmed(seq, pilot, u16(3), u8(5), u8(6))
+                IGNORED -> Ignored(seq, pilot, Reason.of(u8(3)), u32(4), u8(8))
                 HEARTBEAT -> Heartbeat(seq, pilot, Stage.of(u8(3)), Mode.of(u8(4)), u16(5), u32(7))
                 RACE -> Race(seq, pilot, Stage.of(u8(3)), u32(4))
                 else -> {
@@ -114,13 +130,14 @@ sealed interface LapFrame {
             fun u32(v: Long) { u16(v.toInt()); u16((v shr 16).toInt()) }
             val type = when (f) {
                 is Lap -> LAP; is Armed -> ARMED; is Disarmed -> DISARMED
-                is Heartbeat -> HEARTBEAT; is Race -> RACE; is Text -> TEXT
+                is Heartbeat -> HEARTBEAT; is Race -> RACE; is Text -> TEXT; is Ignored -> IGNORED
             }
             u8((VERSION shl 4) or type); u8(f.seq); u8(f.pilot)
             when (f) {
                 is Lap -> { u8(f.lap); u8(f.flags); u32(f.ms) }
                 is Armed -> { u8(f.mode.ordinal); u16(f.heat); u8(f.lapLimit); u16(f.timeLimitS) }
-                is Disarmed -> { u16(f.heat); u8(f.laps) }
+                is Disarmed -> { u16(f.heat); u8(f.laps); u8(f.ignored) }
+                is Ignored -> { u8(f.reason.code); u32(f.ms); u8(f.count) }
                 is Heartbeat -> { u8(f.stage.ordinal); u8(f.mode.ordinal); u16(f.heat); u32(f.uptimeMs) }
                 is Race -> { u8(f.stage.ordinal); u32(f.raceMs) }
                 is Text -> {

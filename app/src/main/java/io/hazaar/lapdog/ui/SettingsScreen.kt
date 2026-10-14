@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -54,6 +55,7 @@ import io.hazaar.lapdog.protocol.TimerSettings.Link
 import io.hazaar.lapdog.protocol.TimerSettings.RaceLimit
 import io.hazaar.lapdog.protocol.TimerSettings.Sensitivity
 import io.hazaar.lapdog.service.LapRepository
+import io.hazaar.lapdog.state.Ignored
 import io.hazaar.lapdog.state.TimerState
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.body
@@ -109,6 +111,7 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
 
         ChannelSection(draft, editable) { draft = it }
         SensitivitySection(draft, editable) { draft = it }
+        FalseReadSection(draft, editable, state.session?.ignored ?: state.lastSession?.ignored, state.session != null) { draft = it }
         RadioSection(draft, editable) { draft = it }
         MessagesSection(draft, editable) { draft = it }
         RaceDefaultsSection(draft, editable) { draft = it }
@@ -255,15 +258,69 @@ private fun SensitivitySection(d: TimerSettings, enabled: Boolean, onChange: (Ti
                 style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NumberField("Smoothing", "%.2f".format(java.util.Locale.ROOT, d.alpha), Modifier.weight(1f), enabled) { t ->
-                t.toFloatOrNull()?.takeIf { it in 0.01f..1f }?.let { onChange(d.copy(alpha = it)) }
-            }
-            NumberField("Min lap time", "%.1f s".format(java.util.Locale.ROOT, d.minLapMs / 1000f), Modifier.weight(1f), enabled) { t ->
-                t.removeSuffix("s").trim().toFloatOrNull()?.takeIf { it in 0.5f..600f }?.let { onChange(d.copy(minLapMs = (it * 1000).roundToInt())) }
-            }
+        NumberField("Smoothing", "%.2f".format(java.util.Locale.ROOT, d.alpha), Modifier.fillMaxWidth(), enabled) { t ->
+            t.toFloatOrNull()?.takeIf { it in 0.01f..1f }?.let { onChange(d.copy(alpha = it)) }
         }
     }
+}
+
+@Composable
+private fun FalseReadSection(d: TimerSettings, enabled: Boolean, ignored: Ignored?, live: Boolean, onChange: (TimerSettings) -> Unit) {
+    Section("False-read protection") {
+        HudCard(radius = 14.dp, padding = 16.dp, spacing = 12.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Minimum lap time", style = body(15.sp, weight = FontWeight.Medium))
+                    Text("Passes sooner than this are ignored", style = body(13.sp, Hud.muted))
+                }
+                val range = TimerSettings.MIN_LAP_RANGE_MS
+                val step = TimerSettings.MIN_LAP_STEP_MS
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.semantics { contentDescription = "Minimum lap time" },
+                ) {
+                    StepButton("−", "Shorter", enabled && d.minLapMs > range.first) {
+                        onChange(d.copy(minLapMs = (d.minLapMs - step).coerceIn(range)))
+                    }
+                    Text(
+                        "%.1f s".format(java.util.Locale.ROOT, d.minLapMs / 1000f),
+                        style = mono(18.sp),
+                        modifier = Modifier.widthIn(min = 64.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    StepButton("+", "Longer", enabled && d.minLapMs < range.last) {
+                        onChange(d.copy(minLapMs = (d.minLapMs + step).coerceIn(range)))
+                    }
+                }
+            }
+            Text(
+                "Stops a crash into the gate, or a bounce back through it, from counting as a lap. Set it a few seconds under your fastest real lap.",
+                style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
+            )
+        }
+        SettingRow(
+            "Ignore parked quads",
+            "A signal peak longer than ${fmtSeconds(d.maxPeakMs)} s is a quad sitting at the gate, not a flyby",
+            divider = false,
+        ) {
+            HudSwitch(d.ignoreParked, { onChange(d.copy(ignoreParked = it)) }, "Ignore parked quads", enabled)
+        }
+        ignored?.describe()?.let { IgnoredNote((if (live) "This heat: " else "Last session: ") + it) }
+    }
+}
+
+private fun fmtSeconds(ms: Int) = if (ms % 1000 == 0) "${ms / 1000}" else "%.1f".format(java.util.Locale.ROOT, ms / 1000f)
+
+@Composable
+private fun StepButton(text: String, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Hud.bg)
+            .border(1.dp, Hud.line, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = body(20.sp, if (enabled) Hud.text else Hud.toggleOff)) }
 }
 
 /** A text field that keeps what's typed and reports it; [onText] applies it when valid. */

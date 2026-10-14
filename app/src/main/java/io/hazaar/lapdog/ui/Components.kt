@@ -333,6 +333,23 @@ fun HoldButton(text: String, onHeld: () -> Unit, modifier: Modifier = Modifier, 
     }
 }
 
+/** Red alert strip, e.g. "Last session: 2 passes ignored (too soon after a lap)". */
+@Composable
+fun IgnoredNote(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Hud.slowBg)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icons.Alert(Hud.slow)
+        Text(text, style = body(13.sp, Hud.slow))
+    }
+}
+
 /** Small stat: label over a mono value. */
 @Composable
 fun Stat(label: String, value: String, modifier: Modifier = Modifier, color: Color = Hud.text, size: Int = 18) {

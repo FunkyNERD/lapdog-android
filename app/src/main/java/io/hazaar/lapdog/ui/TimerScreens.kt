@@ -215,6 +215,7 @@ fun IdleScreen(
                         Stat("Average", st.averageMs?.let(Format::lap) ?: "—", Modifier.weight(1f), size = 17)
                     }
                 }
+                last.ignored.describe()?.let { IgnoredNote(it) }
             }
         }
 
@@ -330,6 +331,7 @@ fun PracticeScreen(state: TimerState, session: Session, message: String?, onNewH
             Stat("Best 3 consec.", stats.bestThreeMs?.let(Format::lap) ?: "—", Modifier.weight(1f))
         }
 
+        session.ignored.describe()?.let { IgnoredNote(it) }
         LapList(stats.laps, Modifier.weight(1f))
 
         if (message != null) Text(message, style = body(13.sp, Hud.slow))
@@ -429,6 +431,7 @@ fun RaceScreen(state: TimerState, session: Session, message: String?, onRestart:
             if (session.stage == Stage.RACING && session.started) RaceRow("Lap ${stats.count + 1}", "", "running", Hud.muted, false, divider = false)
         }
 
+        session.ignored.describe()?.let { IgnoredNote(it) }
         TimerMessages(state, now, Modifier.weight(1f))
 
         if (message != null) Text(message, style = body(13.sp, Hud.slow))

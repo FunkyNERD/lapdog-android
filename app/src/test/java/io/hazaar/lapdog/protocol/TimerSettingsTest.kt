@@ -39,6 +39,19 @@ class TimerSettingsTest {
     }
 
     @Test
+    fun falseReadProtection() {
+        val read = timer.with("park", "off").with("maxpeak", "2000").with("minlap", "4500")
+        assertEquals(false, read.ignoreParked)
+        assertEquals(2000, read.maxPeakMs)
+        assertEquals(4500, read.minLapMs)
+        assertEquals(
+            listOf("set minlap 5000", "set park on", "save"),
+            read.copy(minLapMs = 5000, ignoreParked = true).commandsFrom(read),
+        )
+        assertEquals(1000..30000, TimerSettings.MIN_LAP_RANGE_MS) // same as the timer's set minlap
+    }
+
+    @Test
     fun clearingTextSendsEmptyValue() {
         assertEquals(listOf("set event", "save"), timer.copy(event = "").commandsFrom(timer))
     }

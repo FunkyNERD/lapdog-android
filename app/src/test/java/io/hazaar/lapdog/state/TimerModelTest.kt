@@ -38,7 +38,7 @@ class TimerModelTest {
         assertEquals(listOf(LapEntry(1, 14630)), m.state.session!!.laps)
         assertEquals(16_630L, m.state.session!!.lastPassAt)
 
-        feed({ LapFrame.Disarmed(it, 0, 4, 1) })
+        feed({ LapFrame.Disarmed(it, 0, 4, 1, 0) })
         assertFalse(m.state.armed)
         assertNull(m.state.session)
         assertEquals(4, m.state.lastSession!!.heat)
@@ -82,6 +82,30 @@ class TimerModelTest {
         feed({ LapFrame.Race(it, 0, Stage.FINISHED, 49401) })
         assertEquals(49401L, m.state.session!!.raceMs)
         assertTrue(m.state.armed) // finished, still armed until disarmed
+    }
+
+    @Test
+    fun ignoredPassesAreCountedPerHeat() {
+        feed({ LapFrame.Armed(it, 0, Mode.PRACTICE, 4, 0, 0) })
+        feed({ LapFrame.Ignored(it, 0, LapFrame.Reason.TOO_SOON, 900, 1) })
+        feed({ LapFrame.Ignored(it, 0, LapFrame.Reason.TOO_LONG, 8000, 2) })
+        assertEquals(Ignored(tooSoon = 1, tooLong = 1), m.state.session!!.ignored)
+        assertEquals("2 passes ignored (1 too soon, 1 parked)", m.state.session!!.ignored.describe())
+        // A missed burst: the running count catches up.
+        feed({ LapFrame.Ignored(it, 0, LapFrame.Reason.TOO_SOON, 700, 4) })
+        assertEquals(Ignored(tooSoon = 3, tooLong = 1), m.state.session!!.ignored)
+        feed({ LapFrame.Disarmed(it, 0, 4, 0, 4) })
+        assertEquals(4, m.state.lastSession!!.ignored.total) // kept even with no laps
+    }
+
+    @Test
+    fun disarmTotalWinsWhenIgnoredFramesWereMissed() {
+        feed({ LapFrame.Armed(it, 0, Mode.PRACTICE, 4, 0, 0) })
+        feed({ LapFrame.Lap(it, 0, 0, 0, 0) })
+        feed({ LapFrame.Disarmed(it, 0, 4, 0, 2) })
+        assertEquals("2 passes ignored (too soon after a lap)", m.state.lastSession!!.ignored.describe())
+        assertNull(Ignored().describe())
+        assertEquals("1 pass ignored (quad parked at the gate)", Ignored(tooLong = 1).describe())
     }
 
     @Test

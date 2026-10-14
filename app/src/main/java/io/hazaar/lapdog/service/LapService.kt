@@ -12,6 +12,7 @@ import android.os.Build
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
+import io.hazaar.lapdog.R
 import androidx.lifecycle.lifecycleScope
 import io.hazaar.lapdog.transport.BleTransport
 import io.hazaar.lapdog.transport.Transport
@@ -64,7 +65,7 @@ class LapService : LifecycleService() {
         return Notification.Builder(this, CHANNEL)
             .setContentTitle("LapDog")
             .setContentText("Listening for laps")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_lapdog)
             .setOngoing(true)
             .build()
     }

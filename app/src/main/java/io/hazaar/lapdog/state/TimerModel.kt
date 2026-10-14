@@ -24,12 +24,34 @@ data class Session(
     val goAt: Long? = null,
     /** Race time at the finish. */
     val raceMs: Long? = null,
+    /** Passes the timer ignored this heat, by reason. */
+    val ignored: Ignored = Ignored(),
 ) {
     val stats get() = LapStats(laps)
     val started get() = lastPassAt != null
 }
 
-data class SessionSummary(val heat: Int, val mode: Mode, val laps: List<LapEntry>) {
+/** Gate passes the timer's false-read protection rejected. */
+data class Ignored(val tooSoon: Int = 0, val tooLong: Int = 0) {
+    val total get() = tooSoon + tooLong
+
+    /** "2 passes ignored (too soon after a lap)", null when none. */
+    fun describe(): String? {
+        if (total == 0) return null
+        val what = if (total == 1) "1 pass ignored" else "$total passes ignored"
+        val why = when {
+            tooLong == 0 -> "too soon after a lap"
+            tooSoon == 0 -> "quad parked at the gate"
+            else -> "$tooSoon too soon, $tooLong parked"
+        }
+        return "$what ($why)"
+    }
+
+    fun add(reason: LapFrame.Reason) =
+        if (reason == LapFrame.Reason.TOO_SOON) copy(tooSoon = tooSoon + 1) else copy(tooLong = tooLong + 1)
+}
+
+data class SessionSummary(val heat: Int, val mode: Mode, val laps: List<LapEntry>, val ignored: Ignored = Ignored()) {
     val stats get() = LapStats(laps)
 }
 
@@ -92,7 +114,8 @@ class TimerModel {
         state = state.copy(lastHeardAt = now, lastHeardVia = via)
         when (f) {
             is LapFrame.Armed -> armed(f)
-            is LapFrame.Disarmed -> endSession()
+            is LapFrame.Disarmed -> endSession(f.ignored)
+            is LapFrame.Ignored -> ignored(f, now)
             is LapFrame.Heartbeat -> heartbeat(f)
             is LapFrame.Race -> race(f, now)
             is LapFrame.Lap -> lap(f, now)
@@ -110,11 +133,14 @@ class TimerModel {
         )
     }
 
-    private fun endSession() {
+    private fun endSession(timerIgnored: Int? = null) {
         val s = state.session ?: return
+        // If BLE missed some IGNORED bursts, the timer's total wins; unknown ones count as too soon.
+        val ig = timerIgnored?.takeIf { it > s.ignored.total }
+            ?.let { s.ignored.copy(tooSoon = it - s.ignored.tooLong) } ?: s.ignored
         state = state.copy(
             session = null,
-            lastSession = if (s.started) SessionSummary(s.heat, s.mode, s.laps) else state.lastSession,
+            lastSession = if (s.started || ig.total > 0) SessionSummary(s.heat, s.mode, s.laps, ig) else state.lastSession,
             settings = state.settings?.copy(state = "idle"),
         )
     }
@@ -125,6 +151,14 @@ class TimerModel {
         state = state.copy(
             session = if (s == null || s.heat != f.heat) Session(f.heat, f.mode, f.stage) else s.copy(stage = f.stage),
         )
+    }
+
+    private fun ignored(f: LapFrame.Ignored, now: Long) {
+        val s = current(now)
+        var ig = s.ignored.add(f.reason)
+        // The frame carries the heat's running total, so missed bursts still count.
+        if (f.count > ig.total) ig = if (f.reason == LapFrame.Reason.TOO_SOON) ig.copy(tooSoon = f.count - ig.tooLong) else ig.copy(tooLong = f.count - ig.tooSoon)
+        state = state.copy(session = s.copy(ignored = ig))
     }
 
     private fun current(now: Long): Session = state.session ?: Session(0, Mode.PRACTICE, Stage.PRACTICE)
