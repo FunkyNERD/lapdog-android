@@ -9,6 +9,8 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +56,8 @@ import io.hazaar.lapdog.protocol.TimerSettings
 import io.hazaar.lapdog.protocol.TimerSettings.RaceLimit
 import io.hazaar.lapdog.protocol.TimerSettings.Sensitivity
 import io.hazaar.lapdog.service.LapRepository
+import io.hazaar.lapdog.service.LapSound
+import io.hazaar.lapdog.service.LapSounds
 import io.hazaar.lapdog.state.Ignored
 import io.hazaar.lapdog.state.TimerState
 import io.hazaar.lapdog.ui.theme.Hud
@@ -106,6 +110,8 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
             Text("Settings", style = heading(24.sp, spacing = 0.sp), modifier = Modifier.semantics { heading() })
         }
 
+        LapSoundSection()
+
         ConnectionCard(state)
 
         ChannelSection(draft, editable) { draft = it }
@@ -144,6 +150,19 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
+    }
+}
+
+/** A phone setting, not the timer's: saved as soon as it's picked. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LapSoundSection() {
+    val sound by LapSounds.sound.collectAsStateWithLifecycle()
+    Section("Lap sound", "This phone") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LapSound.entries.forEach { s -> ChoiceChip(s.label, s == sound, { LapSounds.choose(s) }) }
+        }
+        Text("Plays on every gate pass, on the media volume. Tap one to hear it.", style = body(13.sp, Hud.muted))
     }
 }
 

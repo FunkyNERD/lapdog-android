@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.state.PersonalBests
 import io.hazaar.lapdog.service.HeatStore
+import io.hazaar.lapdog.service.LapSounds
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapService
 import io.hazaar.lapdog.ui.theme.Hud
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         HeatStore.init(applicationContext)
+        LapSounds.init(applicationContext)
         // Listen from the start: USB and BLE both run in the foreground service.
         requestPermissions.launch(neededPermissions())
         setContent {

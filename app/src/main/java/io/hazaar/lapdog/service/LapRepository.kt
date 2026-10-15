@@ -65,7 +65,10 @@ object LapRepository {
 
     @Synchronized
     fun onFrame(frame: LapFrame, via: Via) {
-        if (model.onFrame(frame, via, now())) publish()
+        if (!model.onFrame(frame, via, now())) return // a copy already heard over the other link
+        publish()
+        // Every gate pass the timer counted, the start pass included; ignored passes are quiet.
+        if (frame is LapFrame.Lap) LapSounds.play()
     }
 
     /** New state out, finished heats saved. */
