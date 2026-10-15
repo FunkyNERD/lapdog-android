@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -149,13 +151,14 @@ fun IdleScreen(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            InfoCard("Channel", s?.channelLabel ?: "—", s?.let { "${it.freqMhz} MHz" } ?: "", Modifier.weight(1f))
+        // Same height for all three, whichever has the most lines.
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            InfoCard("Channel", s?.channelLabel ?: "—", s?.let { "${it.freqMhz} MHz" } ?: "", Modifier.weight(1f).fillMaxHeight())
             InfoCard(
                 "Sensitivity",
                 s?.sensitivity?.label?.uppercase() ?: "—",
                 s?.let { "+${it.enterDb.toInt()} / +${it.exitDb.toInt()} dB" } ?: "",
-                Modifier.weight(1f),
+                Modifier.weight(1f).fillMaxHeight(),
             )
             // Unread settings: hearing BLE still says Bluetooth is on.
             val ble = s?.ble ?: (state.lastHeardVia == Via.BLE)
@@ -163,7 +166,7 @@ fun IdleScreen(
             InfoCard(
                 "Radio out",
                 when {
-                    ble && espnow -> "BOTH"
+                    ble && espnow -> ""
                     ble -> "BLE"
                     espnow -> "ESP-NOW"
                     s != null -> "USB"
@@ -176,8 +179,10 @@ fun IdleScreen(
                     s != null -> "radio off"
                     else -> ""
                 },
-                Modifier.weight(1f),
+                Modifier.weight(1f).fillMaxHeight(),
                 monoDetail = false,
+                // Both by name, a line each at a smaller size: one line won't fit the card.
+                lines = if (ble && espnow) listOf("BLE +", "ESP-NOW") else null,
             )
         }
 
@@ -288,11 +293,23 @@ fun IdleScreen(
 }
 
 @Composable
-private fun InfoCard(label: String, value: String, detail: String, modifier: Modifier, monoDetail: Boolean = true) {
+private fun InfoCard(
+    label: String,
+    value: String,
+    detail: String,
+    modifier: Modifier,
+    monoDetail: Boolean = true,
+    lines: List<String>? = null, // in place of value and detail: two short values, a line each
+) {
     HudCard(modifier) {
         Label(label)
-        Text(value, style = mono(20.sp), maxLines = 1)
-        Text(detail, style = if (monoDetail) mono(12.sp, Hud.muted, FontWeight.Medium) else body(12.sp, Hud.muted), maxLines = 1)
+        if (lines != null) {
+            // 16sp twice takes the height of the 20sp value plus the 12sp detail.
+            lines.forEach { Text(it, style = mono(16.sp), maxLines = 1) }
+        } else {
+            Text(value, style = mono(20.sp), maxLines = 1)
+            Text(detail, style = if (monoDetail) mono(12.sp, Hud.muted, FontWeight.Medium) else body(12.sp, Hud.muted), maxLines = 1)
+        }
     }
 }
 
