@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.service.LapRepository
@@ -56,6 +59,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Armed, the phone is propped up by the gate: don't let the screen time out.
+                KeepScreenOn(state.armed)
+
                 Box(Modifier.fillMaxSize().background(Hud.bg).safeDrawingPadding()) {
                     val session = state.session
                     when {
@@ -76,5 +82,15 @@ class MainActivity : ComponentActivity() {
             arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.POST_NOTIFICATIONS)
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> arrayOf(Manifest.permission.BLUETOOTH_SCAN)
         else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+}
+
+/** Holds the screen on (FLAG_KEEP_SCREEN_ON via the view) while [on]; the system timeout applies again after. */
+@Composable
+private fun KeepScreenOn(on: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(view, on) {
+        view.keepScreenOn = on
+        onDispose { view.keepScreenOn = false }
     }
 }
