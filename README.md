@@ -6,7 +6,7 @@ Companion Android app for the LapDog FPV lap timer. It receives lap frames over 
 
 False-read protection lives on the timer (minimum lap time, ignore parked quads); the app edits it in Settings and shows passes the timer ignored as a red note per heat.
 
-Every gate pass the timer counts plays a **lap sound** on the phone: Bark (the default), Tone, Ding, Bell, Chirp, Double beep or Off, picked at the top of Settings and kept on the phone. It plays from the foreground service, so it works with the screen off, on the media volume. The sounds are synthesised by `tools/gen-sounds.py` (numpy) into `res/raw/`.
+Every gate pass the timer counts plays a **lap sound** on the phone: Bark (the default), Tone, Ding, Bell, Chirp, Double beep or Off, picked at the top of Settings and kept on the phone. It plays from the foreground service, so it works with the screen off, on the media volume. The bark is a real German shepherd recording (CC0); the rest are synthesised by `tools/gen-sounds.py` (numpy) into `res/raw/`. Sources and licences are in `sounds-licenses/`.
 
 The **timer** is the source of truth for event name, heat prefix and heat number. The app reads them (USB `get`, or BLE `TEXT`/`ARMED` frames) and only changes them by sending `set …` + `save`. Radio output is exclusive: with the timer on ESP-NOW the app hears it only over USB.
 

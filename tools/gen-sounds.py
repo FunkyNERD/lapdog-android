@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Generates the lap sounds in app/src/main/res/raw/ (lap_*.wav): synthesised here, so
-there's no sample licence to worry about. Edit and re-run:
+"""Generates the synthesised lap sounds in app/src/main/res/raw/ (lap_*.wav). Edit and re-run:
 
     python3 tools/gen-sounds.py
 
 Needs numpy. 22.05 kHz, 16-bit mono, each peak-normalised to the same level.
+
+The bark (lap_bark.wav) isn't made here: it's a real recording (CC0), see
+sounds-licenses/README.md.
 """
 import os
 import wave
@@ -13,7 +15,6 @@ import numpy as np
 
 RATE = 22050
 OUT = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "res", "raw")
-rng = np.random.default_rng(7)  # fixed, so re-running gives the same files
 
 
 def t(seconds):
@@ -34,20 +35,6 @@ def fade_out(s, seconds=0.01):
     n = int(RATE * seconds)
     s[-n:] *= np.linspace(1, 0, n)
     return s
-
-
-def resonator(x, freq, bw):
-    """Two-pole band-pass (a formant), unity gain at `freq`."""
-    r = np.exp(-np.pi * bw / RATE)
-    a1, a2 = -2 * r * np.cos(2 * np.pi * freq / RATE), r * r
-    g = (1 - r * r) / 2
-    y = np.zeros_like(x)
-    y1 = y2 = x2 = 0.0
-    for i, xi in enumerate(x):
-        yi = g * (xi - x2) - a1 * y1 - a2 * y2
-        x2 = x[i - 1] if i else 0.0
-        y[i], y2, y1 = yi, y1, yi
-    return y
 
 
 def tone():
@@ -90,27 +77,7 @@ def double_beep():
     return np.concatenate([one, np.zeros(int(RATE * 0.06)), one])
 
 
-def bark():
-    # One "woof": a buzzy voice whose pitch jumps up then falls, through dog-sized
-    # formants, with breath noise and a hard onset.
-    x = t(0.26)
-    n = len(x)
-    f0 = np.interp(x, [0, 0.03, 0.09, 0.26], [430, 620, 470, 300])
-    f0 *= 1 + 0.03 * rng.standard_normal(n).cumsum() / np.sqrt(np.arange(1, n + 1))  # rough
-    phase = np.cumsum(f0) / RATE
-    pulses = 2 * (phase % 1) - 1  # sawtooth: rich in harmonics, like a voice
-    src = pulses + 0.45 * rng.standard_normal(n)
-    v = (resonator(src, 650, 220) * 1.0 + resonator(src, 1250, 300) * 0.8
-         + resonator(src, 2400, 450) * 0.35 + resonator(src, 3600, 600) * 0.12)
-    e = np.interp(x, [0, 0.012, 0.06, 0.16, 0.26], [0, 1, 0.85, 0.35, 0])
-    s = v * e
-    # A little low "thump" at the start gives it body.
-    s += 0.6 * np.sin(2 * np.pi * 180 * x) * np.exp(-x / 0.03) * np.minimum(x / 0.004, 1)
-    return fade_out(s, 0.02)
-
-
 SOUNDS = {
-    "lap_bark": bark,
     "lap_tone": tone,
     "lap_ding": ding,
     "lap_bell": bell,
