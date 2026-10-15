@@ -39,6 +39,9 @@ object Icons {
     private val bluetooth = icon("bluetooth", "M7 7l10 10-5 5V2l5 5L7 17")
     private val usb = icon("usb", "M12 2v14", "M9 5l3-3 3 3", "M12 12l-4-3V7", "M12 14l4-3V9", "M12 16a2 2 0 1 0 0 4a2 2 0 1 0 0-4z")
     private val back = icon("back", "M15 18l-6-6 6-6")
+    private val forward = icon("forward", "M9 18l6-6-6-6")
+    private val share = icon("share", "M12 3v12", "M7 8l5-5 5 5", "M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5")
+    private val cross = icon("cross", "M6 6l12 12", "M18 6L6 18")
     private val alert = icon("alert", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z", "M12 8v5", "M12 16h.01")
 
     @Composable
@@ -49,5 +52,8 @@ object Icons {
     @Composable fun Bluetooth(tint: Color, size: Dp = 16.dp) = Draw(bluetooth, tint, size)
     @Composable fun Usb(tint: Color, size: Dp = 16.dp) = Draw(usb, tint, size)
     @Composable fun Alert(tint: Color, size: Dp = 16.dp) = Draw(alert, tint, size)
+    @Composable fun Forward(tint: Color, size: Dp = 18.dp) = Draw(forward, tint, size)
+    @Composable fun Share(tint: Color, size: Dp = 20.dp) = Draw(share, tint, size)
+    @Composable fun Cross(tint: Color, size: Dp = 14.dp) = Draw(cross, tint, size)
     @Composable fun Back(tint: Color, size: Dp = 24.dp) = Draw(back, tint, size)
 }

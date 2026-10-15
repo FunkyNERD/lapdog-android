@@ -50,7 +50,7 @@ object LapRepository {
     @Synchronized
     fun onUsb(connected: Boolean) {
         model.onUsb(connected)
-        _state.value = model.state
+        publish()
         if (!connected) {
             while (outgoing.tryReceive().isSuccess) Unit // drop anything queued for the old port
             _rssi.value = emptyList()
@@ -59,7 +59,13 @@ object LapRepository {
 
     @Synchronized
     fun onFrame(frame: LapFrame, via: Via) {
-        if (model.onFrame(frame, via, now())) _state.value = model.state
+        if (model.onFrame(frame, via, now())) publish()
+    }
+
+    /** New state out, finished heats saved. */
+    private fun publish() {
+        _state.value = model.state
+        model.takeFinished().forEach(HeatStore::save)
     }
 
     fun onLine(line: TimerLine) {
@@ -67,7 +73,7 @@ object LapRepository {
             is TimerLine.Frame -> onFrame(line.frame, Via.USB)
             is TimerLine.Setting -> synchronized(this) {
                 model.onSetting(line.key, line.value)
-                _state.value = model.state
+                publish()
             }
             is TimerLine.Rssi -> _rssi.value = (_rssi.value + line.db).takeLast(RSSI_SAMPLES)
             is TimerLine.Reply -> replies.tryEmit(line)

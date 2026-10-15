@@ -5,6 +5,7 @@ import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.LapFrame.Stage
 import io.hazaar.lapdog.protocol.TextAssembler
 import io.hazaar.lapdog.protocol.TimerSettings
+import kotlinx.serialization.Serializable
 
 /** How a message reached the app. */
 enum class Via(val label: String) { USB("USB"), BLE("Bluetooth") }
@@ -26,12 +27,19 @@ data class Session(
     val raceMs: Long? = null,
     /** Passes the timer ignored this heat, by reason. */
     val ignored: Ignored = Ignored(),
+    /** The ignored passes heard, in order; fewer than [ignored] if BLE missed some. */
+    val passes: List<IgnoredPass> = emptyList(),
+    /** Wall clock (ms) at the arm, and the channel then (null if settings unknown). */
+    val startedAt: Long = 0,
+    val channel: String? = null,
+    val freqMhz: Int? = null,
 ) {
     val stats get() = LapStats(laps)
     val started get() = lastPassAt != null
 }
 
 /** Gate passes the timer's false-read protection rejected. */
+@Serializable
 data class Ignored(val tooSoon: Int = 0, val tooLong: Int = 0) {
     val total get() = tooSoon + tooLong
 
@@ -51,16 +59,13 @@ data class Ignored(val tooSoon: Int = 0, val tooLong: Int = 0) {
         if (reason == LapFrame.Reason.TOO_SOON) copy(tooSoon = tooSoon + 1) else copy(tooLong = tooLong + 1)
 }
 
-data class SessionSummary(val heat: Int, val mode: Mode, val laps: List<LapEntry>, val ignored: Ignored = Ignored()) {
-    val stats get() = LapStats(laps)
-}
-
 data class TimerState(
     val usbConnected: Boolean = false,
     /** Read from the timer over USB ("get"); null until then. */
     val settings: TimerSettings? = null,
     val session: Session? = null,
-    val lastSession: SessionSummary? = null,
+    /** The last heat finished since the app started. */
+    val lastSession: HeatRecord? = null,
     /** Event name and heat prefix as heard in TEXT frames (BLE); settings win when known. */
     val heardEvent: String? = null,
     val heardPrefix: String? = null,
@@ -87,13 +92,20 @@ data class TimerState(
  *
  * Frames arrive over USB and BLE at once, and BLE repeats each one several
  * times per burst, so anything with a seq seen in the last [DEDUPE_MS] is dropped.
+ *
+ * Each heat that ends (DISARMED, an idle heartbeat or a new ARMED) becomes a
+ * [HeatRecord]; the caller saves them from [takeFinished].
  */
-class TimerModel {
+class TimerModel(private val wallClock: () -> Long = System::currentTimeMillis) {
     var state = TimerState()
         private set
 
     private val seen = HashMap<Int, Long>()
     private val texts = TextAssembler()
+    private val finished = ArrayList<HeatRecord>()
+
+    /** Heats ended since the last call, oldest first. */
+    fun takeFinished(): List<HeatRecord> = finished.toList().also { finished.clear() }
 
     fun onUsb(connected: Boolean) {
         state = if (connected) state.copy(usbConnected = true) else state.copy(usbConnected = false, settings = null)
@@ -125,9 +137,11 @@ class TimerModel {
     }
 
     private fun armed(f: LapFrame.Armed) {
+        // A new heat while one runs ("heat next") ends it; the same heat again is a restart.
+        state.session?.let { if (it.heat == f.heat) state = state.copy(session = null) else endSession() }
         val stage = if (f.mode == Mode.RACE) Stage.STAGING else Stage.PRACTICE
         state = state.copy(
-            session = Session(f.heat, f.mode, stage, f.lapLimit, f.timeLimitS),
+            session = newSession(f.heat, f.mode, stage).copy(lapLimit = f.lapLimit, timeLimitS = f.timeLimitS),
             // The timer advanced its heat counter when it armed.
             settings = state.settings?.let { it.copy(nextHeat = maxOf(it.nextHeat, f.heat + 1), state = f.mode.name.lowercase()) },
         )
@@ -138,18 +152,45 @@ class TimerModel {
         // If BLE missed some IGNORED bursts, the timer's total wins; unknown ones count as too soon.
         val ig = timerIgnored?.takeIf { it > s.ignored.total }
             ?.let { s.ignored.copy(tooSoon = it - s.ignored.tooLong) } ?: s.ignored
+        val record = if (s.started || ig.total > 0) record(s, ig) else null
+        record?.let { finished += it }
         state = state.copy(
             session = null,
-            lastSession = if (s.started || ig.total > 0) SessionSummary(s.heat, s.mode, s.laps, ig) else state.lastSession,
+            lastSession = record ?: state.lastSession,
             settings = state.settings?.copy(state = "idle"),
         )
     }
 
+    private fun record(s: Session, ig: Ignored) = HeatRecord(
+        id = s.startedAt,
+        heat = s.heat,
+        prefix = state.heatPrefix,
+        event = state.event,
+        mode = s.mode,
+        startedAt = s.startedAt,
+        channel = s.channel,
+        freqMhz = s.freqMhz,
+        laps = s.laps,
+        holeshotMs = s.holeshotMs,
+        lapLimit = s.lapLimit,
+        timeLimitS = s.timeLimitS,
+        raceMs = s.raceMs,
+        finished = s.stage == Stage.FINISHED,
+        ignored = ig,
+        passes = s.passes,
+    )
+
+    private fun newSession(heat: Int, mode: Mode, stage: Stage): Session {
+        val t = state.settings
+        return Session(heat, mode, stage, startedAt = wallClock(), channel = t?.channelLabel, freqMhz = t?.freqMhz)
+    }
+
     private fun heartbeat(f: LapFrame.Heartbeat) {
-        val s = state.session
         if (f.stage == Stage.IDLE) return endSession()
+        if (state.session.let { it != null && it.heat != f.heat }) endSession()
+        val s = state.session
         state = state.copy(
-            session = if (s == null || s.heat != f.heat) Session(f.heat, f.mode, f.stage) else s.copy(stage = f.stage),
+            session = if (s == null || s.heat != f.heat) newSession(f.heat, f.mode, f.stage) else s.copy(stage = f.stage),
         )
     }
 
@@ -158,10 +199,11 @@ class TimerModel {
         var ig = s.ignored.add(f.reason)
         // The frame carries the heat's running total, so missed bursts still count.
         if (f.count > ig.total) ig = if (f.reason == LapFrame.Reason.TOO_SOON) ig.copy(tooSoon = f.count - ig.tooLong) else ig.copy(tooLong = f.count - ig.tooSoon)
-        state = state.copy(session = s.copy(ignored = ig))
+        val pass = IgnoredPass(f.reason, f.ms, s.laps.maxOfOrNull { it.lap } ?: 0)
+        state = state.copy(session = s.copy(ignored = ig, passes = s.passes + pass))
     }
 
-    private fun current(now: Long): Session = state.session ?: Session(0, Mode.PRACTICE, Stage.PRACTICE)
+    private fun current(now: Long): Session = state.session ?: newSession(0, Mode.PRACTICE, Stage.PRACTICE)
 
     private fun race(f: LapFrame.Race, now: Long) {
         val s = current(now).copy(mode = Mode.RACE)

@@ -29,6 +29,7 @@ class LapService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        HeatStore.init(applicationContext)
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID, notification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,

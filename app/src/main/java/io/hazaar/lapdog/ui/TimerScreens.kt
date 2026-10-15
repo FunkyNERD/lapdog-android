@@ -42,6 +42,7 @@ import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.LapFrame.Stage
 import io.hazaar.lapdog.protocol.TimerSettings
 import io.hazaar.lapdog.service.LapRepository
+import io.hazaar.lapdog.state.HeatRecord
 import io.hazaar.lapdog.state.LapEntry
 import io.hazaar.lapdog.state.Session
 import io.hazaar.lapdog.state.TimerState
@@ -98,8 +99,12 @@ fun IdleScreen(
     state: TimerState,
     running: Boolean,
     message: String?,
+    lastHeat: HeatRecord?,
+    hasHistory: Boolean,
     onSettings: () -> Unit,
     onArm: (ArmChoice) -> Unit,
+    onOpenHeat: (HeatRecord) -> Unit,
+    onHistory: () -> Unit,
 ) {
     val now = rememberNow(1000)
     val s = state.settings
@@ -204,16 +209,40 @@ fun IdleScreen(
         }
 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val last = state.lastSession
-            if (last != null) {
-                SectionLabel("Last session")
-                HudCard(padding = 14.dp) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val st = last.stats
-                        Stat(state.heatName(last.heat), "${st.count} laps", Modifier.weight(1f), size = 17)
-                        Stat("Best", st.best?.let { Format.lap(it.ms) } ?: "—", Modifier.weight(1f), Hud.best, 17)
-                        Stat("Average", st.averageMs?.let(Format::lap) ?: "—", Modifier.weight(1f), size = 17)
+            val last = lastHeat
+            if (last != null || hasHistory) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Last session", Modifier.weight(1f))
+                    if (hasHistory) {
+                        Text(
+                            "View all heats",
+                            style = body(14.sp, Hud.accent),
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onHistory).padding(vertical = 10.dp, horizontal = 4.dp),
+                        )
                     }
+                }
+            }
+            if (last != null) {
+                val st = last.stats
+                val best = st.best?.let { Format.lap(it.ms) } ?: "—"
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Hud.surface)
+                        .border(1.dp, Hud.line, RoundedCornerShape(12.dp))
+                        .clickable { onOpenHeat(last) }
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "Last session: ${last.name}, ${st.count} laps, best $best. Show heat details"
+                        }
+                        .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Stat(last.name, "${st.count} laps", Modifier.weight(1f), size = 17)
+                    Stat("Best", best, Modifier.weight(1f), Hud.best, 17)
+                    Stat("Average", st.averageMs?.let(Format::lap) ?: "—", Modifier.weight(1f), size = 17)
+                    Icons.Forward(Hud.chevron)
                 }
                 last.ignored.describe()?.let { IgnoredNote(it) }
             }
