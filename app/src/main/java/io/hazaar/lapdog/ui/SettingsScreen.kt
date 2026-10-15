@@ -453,11 +453,9 @@ private fun MessagesSection(d: TimerSettings, enabled: Boolean, onChange: (Timer
                     HudField("Finish", d.textFinish, { onChange(d.copy(textFinish = it.uppercase())) }, Modifier.weight(1f), monoText = true, maxLength = TimerSettings.MSG_MAX, enabled = enabled, height = 44.dp)
                 }
             }
-            SettingRow("Lap times", "Each lap on OSD row 15") {
+            // CMRC's lap row has no room for a "BEST" callout, so there's no switch for one.
+            SettingRow("Lap times", "Lap and position on row 3, each lap's time on row 15", divider = false) {
                 HudSwitch(d.msgLaps, { onChange(d.copy(msgLaps = it)) }, "Broadcast lap times", enabled)
-            }
-            SettingRow("Best lap callout", "Adds “BEST” when you beat it", divider = false) {
-                HudSwitch(d.msgBest, { onChange(d.copy(msgBest = it)) }, "Best lap callout", enabled)
             }
         }
     }

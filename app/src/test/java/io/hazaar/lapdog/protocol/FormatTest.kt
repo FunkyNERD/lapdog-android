@@ -25,4 +25,13 @@ class FormatTest {
         assertNull(Format.parseMinutes("1:75"))
         assertNull(Format.parseMinutes("x"))
     }
+
+    @Test
+    fun osdDropsGlyphsLikeRacePanel() {
+        assertEquals("ARM NOW", Format.osd("w ARM NOW x"))
+        assertEquals("GO!", Format.osd("w   GO!   x"))
+        assertEquals("L2:17.62 | T35.24", Format.osd("x L2:17.62 | T35.24 w"))
+        assertEquals("P1 | L3", Format.osd("P1 | L3"))
+        assertEquals("", Format.osd(""))
+    }
 }

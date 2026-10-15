@@ -1,5 +1,6 @@
 package io.hazaar.lapdog.state
 
+import io.hazaar.lapdog.protocol.Format
 import io.hazaar.lapdog.protocol.LapFrame
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.LapFrame.Stage
@@ -233,7 +234,7 @@ class TimerModel(private val wallClock: () -> Long = System::currentTimeMillis) 
             LapFrame.SLOT_HEAT_PREFIX -> state.copy(heardPrefix = text)
             LapFrame.SLOT_OSD_CLEAR -> state.copy(osdRows = emptyMap(), osdAt = now, osdVia = via)
             in 0 until OSD_ROWS -> state.copy(
-                osdRows = if (text.isEmpty()) state.osdRows - slot else state.osdRows + (slot to text),
+                osdRows = Format.osd(text).let { if (it.isEmpty()) state.osdRows - slot else state.osdRows + (slot to it) },
                 osdAt = now, osdVia = via,
             )
             else -> state
