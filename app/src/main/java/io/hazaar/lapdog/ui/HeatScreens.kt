@@ -132,6 +132,7 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
                     lap?.second?.let { Format.lap(it.ms) } ?: "—",
                     lap?.let { (h, _) -> "${h.name} · ${text.relativeDay(h)}" } ?: "No laps yet",
                     Hud.best, Modifier.weight(1f),
+                    onClick = lap?.let { (h, _) -> { onOpen(h) } },
                 )
                 val three = pb.three
                 PbTile(
@@ -139,6 +140,7 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
                     three?.second?.let { w -> Format.lap(w.sumOf { it.ms }) } ?: "—",
                     three?.let { (h, w) -> "${h.name} · laps ${w.first().lap}–${w.last().lap}" } ?: "Needs 3 in a row",
                     Hud.text, Modifier.weight(1f),
+                    onClick = three?.let { (h, _) -> { onOpen(h) } },
                 )
             }
         }
@@ -171,9 +173,12 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
     }
 }
 
+/** A personal-best tile; tapping it opens the heat it was set in (null onClick: nothing set yet). */
 @Composable
-private fun PbTile(label: String, value: String, note: String, color: Color, modifier: Modifier) {
-    HudCard(modifier, padding = 13.dp, spacing = 2.dp) {
+private fun PbTile(label: String, value: String, note: String, color: Color, modifier: Modifier, onClick: (() -> Unit)? = null) {
+    val tap = if (onClick == null) Modifier else
+        Modifier.clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClickLabel = "Open heat", onClick = onClick)
+    HudCard(modifier.then(tap), padding = 13.dp, spacing = 2.dp) {
         Label(label, size = 12)
         Text(value, style = mono(22.sp, color), maxLines = 1)
         Label(note, size = 12)
