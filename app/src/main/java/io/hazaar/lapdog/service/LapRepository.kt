@@ -47,6 +47,12 @@ object LapRepository {
 
     fun setRunning(running: Boolean) { _running.value = running }
 
+    /** The app is on screen. Off screen and disarmed, LapService stops. */
+    private val _appVisible = MutableStateFlow(false)
+    val appVisible: StateFlow<Boolean> = _appVisible
+
+    fun setAppVisible(visible: Boolean) { _appVisible.value = visible }
+
     @Synchronized
     fun onUsb(connected: Boolean) {
         model.onUsb(connected)

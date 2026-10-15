@@ -36,7 +36,25 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val permissions = ActivityResultContracts.RequestMultiplePermissions()
-    private val requestPermissions = registerForActivityResult(permissions) { LapService.start(this) }
+    private val requestPermissions = registerForActivityResult(permissions) {
+        listening = true
+        LapService.start(this)
+    }
+
+    /** Permissions asked: from here on, coming back to the app restarts the service. */
+    private var listening = false
+
+    override fun onStart() {
+        super.onStart()
+        LapRepository.setAppVisible(true)
+        if (listening) LapService.start(this)
+    }
+
+    override fun onStop() {
+        // Leaving the app stops the service unless the timer is armed.
+        if (!isChangingConfigurations) LapRepository.setAppVisible(false)
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
