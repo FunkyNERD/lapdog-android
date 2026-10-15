@@ -50,6 +50,23 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.body
 import io.hazaar.lapdog.ui.theme.heading
@@ -219,7 +236,7 @@ fun SettingRow(title: String, subtitle: String?, divider: Boolean = true, contro
 /** Labelled text field in the design's style. */
 @Composable
 fun HudField(
-    label: String,
+    label: String?,
     value: String,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -229,12 +246,14 @@ fun HudField(
     maxLength: Int = 64,
     enabled: Boolean = true,
     height: Dp = 48.dp,
+    fieldModifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, style = body(13.sp, Hud.muted))
+        if (label != null) Text(label, style = body(13.sp, Hud.muted))
         BasicTextField(
             value = value,
             onValueChange = { if (it.length <= maxLength && '\n' !in it) onChange(it) },
+            modifier = fieldModifier,
             enabled = enabled,
             singleLine = true,
             textStyle = if (monoText) mono(15.sp, weight = FontWeight.Medium) else body(15.sp),
@@ -366,3 +385,138 @@ fun Spacer(height: Dp) = androidx.compose.foundation.layout.Spacer(Modifier.heig
 fun HSpacer(width: Dp) = androidx.compose.foundation.layout.Spacer(Modifier.width(width))
 
 private val Double.em get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Em)
+
+/** A dialog in the HUD style: a surface card, a heading, then [content]. */
+@Composable
+fun HudDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        HudCard(Modifier.fillMaxWidth(), radius = 18.dp, padding = 18.dp, spacing = 12.dp) {
+            Text(title, style = heading(20.sp, spacing = 0.sp), modifier = Modifier.semantics { heading() })
+            content()
+        }
+    }
+}
+
+/** Cancel / confirm buttons along the bottom of a [HudDialog]. */
+@Composable
+fun DialogButtons(confirm: String, onConfirm: () -> Unit, onCancel: () -> Unit, confirmEnabled: Boolean = true) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SecondaryButton("Cancel", onCancel, Modifier.weight(1f))
+        PrimaryButton(confirm, onConfirm, Modifier.weight(1f), height = 64.dp, size = 18, enabled = confirmEnabled)
+    }
+}
+
+/**
+ * A number with − and + either side. Hold a button to repeat, speeding up; tap the
+ * number to type one. TalkBack treats the whole as an adjustable value.
+ * [editText] / [parse] convert to and from what's typed (whole numbers by default).
+ */
+@Composable
+fun Stepper(
+    label: String,
+    value: Int,
+    range: IntRange,
+    onChange: (Int) -> Unit,
+    format: (Int) -> String,
+    step: Int = 1,
+    enabled: Boolean = true,
+    editText: (Int) -> String = { "$it" },
+    parse: (String) -> Int? = { it.trim().toIntOrNull() },
+) {
+    val current by rememberUpdatedState(value)
+    val change by rememberUpdatedState(onChange)
+    var typing by remember { mutableStateOf(false) }
+    fun nudge(by: Int) {
+        val v = (current + by).coerceIn(range)
+        if (v != current) change(v)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.semantics {
+            contentDescription = label
+            stateDescription = format(value)
+            progressBarRangeInfo = ProgressBarRangeInfo(
+                value.toFloat(), range.first.toFloat()..range.last.toFloat(),
+                ((range.last - range.first) / step - 1).coerceAtLeast(0),
+            )
+            if (enabled) setProgress { t ->
+                val v = (range.first + ((t.roundToInt() - range.first) / step) * step).coerceIn(range)
+                if (v != current) change(v)
+                true
+            }
+        },
+    ) {
+        RepeatButton("−", "Decrease $label", enabled && value > range.first) { nudge(-step) }
+        Box(
+            Modifier.widthIn(min = 76.dp).height(48.dp).clip(RoundedCornerShape(10.dp))
+                .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Type a value") { typing = true },
+            contentAlignment = Alignment.Center,
+        ) { Text(format(value), style = mono(18.sp, if (enabled) Hud.text else Hud.muted), textAlign = TextAlign.Center) }
+        RepeatButton("+", "Increase $label", enabled && value < range.last) { nudge(step) }
+    }
+    if (typing) {
+        var text by remember { mutableStateOf(editText(value)) }
+        val typed = parse(text)?.takeIf { it in range }
+        val focus = remember { FocusRequester() }
+        HudDialog(label, onDismiss = { typing = false }) {
+            HudField(
+                "${format(range.first)} – ${format(range.last)}", text, { text = it },
+                monoText = true, numeric = true, maxLength = 8, fieldModifier = Modifier.focusRequester(focus),
+            )
+            DialogButtons("OK", { typed?.let(change); typing = false }, { typing = false }, confirmEnabled = typed != null)
+        }
+        LaunchedEffect(Unit) { focus.requestFocus() }
+    }
+}
+
+/** A step button: one step on tap, then repeating (and speeding up) while held. */
+@Composable
+private fun RepeatButton(text: String, description: String, enabled: Boolean, onStep: () -> Unit) {
+    val step by rememberUpdatedState(onStep)
+    val scope = rememberCoroutineScope()
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Hud.bg)
+            .border(1.dp, Hud.line, RoundedCornerShape(10.dp))
+            .semantics {
+                role = Role.Button
+                contentDescription = description
+                if (!enabled) disabled()
+                onClick { step(); true }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown()
+                    step()
+                    val repeat = scope.launch {
+                        delay(450)
+                        var gap = 160L
+                        while (true) {
+                            step()
+                            delay(gap)
+                            gap = (gap * 0.85f).toLong().coerceAtLeast(40L)
+                        }
+                    }
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        repeat.cancel()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = body(22.sp, if (enabled) Hud.text else Hud.toggleOff)) }
+}
+
+/** A category's icon on a tinted rounded square. */
+@Composable
+fun IconTile(tint: Color, background: Color, size: Dp = 40.dp, icon: @Composable (Color, Dp) -> Unit) {
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(background),
+        contentAlignment = Alignment.Center,
+    ) { icon(tint, size * 0.55f) }
+}

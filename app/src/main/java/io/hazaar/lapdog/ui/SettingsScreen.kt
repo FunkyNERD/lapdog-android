@@ -9,16 +9,24 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -70,14 +78,41 @@ import kotlin.math.roundToInt
 
 private const val GRAPH_MAX_DB = 32f
 
+/** One page per category; the list is the screen's home. [phone]: kept on this phone, not the timer. */
+private enum class Page(val title: String, val phone: Boolean = false) {
+    CHANNEL("Channel & detection"),
+    FALSE_READ("False-read protection"),
+    RADIO("Radio output"),
+    MESSAGES("Race messages"),
+    RACE("Race defaults"),
+    LAP_SOUND("Lap sound", phone = true),
+}
+
+private val timerPages = Page.entries.filter { !it.phone }
+
+/** The category's icon tile: blue for timer settings, purple for this phone's. */
+@Composable
+private fun PageIcon(p: Page, size: androidx.compose.ui.unit.Dp = 40.dp) {
+    IconTile(if (p.phone) Hud.best else Hud.accent, if (p.phone) Hud.bestTint else Hud.selected, size) { tint, s ->
+        when (p) {
+            Page.CHANNEL -> Icons.Antenna(tint, s)
+            Page.FALSE_READ -> Icons.Shield(tint, s)
+            Page.RADIO -> Icons.Broadcast(tint, s)
+            Page.MESSAGES -> Icons.Message(tint, s)
+            Page.RACE -> Icons.Flag(tint, s)
+            Page.LAP_SOUND -> Icons.Speaker(tint, s)
+        }
+    }
+}
+
 @Composable
 fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
-    BackHandler(onBack = onBack)
     val timer = state.settings
     val editable = state.usbConnected && timer != null && !state.armed
     val scope = rememberCoroutineScope()
 
-    // The pilot edits a copy; it follows the timer until the first edit.
+    // The pilot edits a copy; it follows the timer until the first edit. It's kept
+    // across pages, so leaving a page loses nothing; leaving Settings asks.
     var base by remember { mutableStateOf(timer) }
     var draft by remember { mutableStateOf(timer ?: TimerSettings()) }
     LaunchedEffect(timer) {
@@ -86,84 +121,292 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
     }
     var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text, isError
     var saving by remember { mutableStateOf(false) }
+    var page by rememberSaveable { mutableStateOf<Page?>(null) }
+    var askLeave by remember { mutableStateOf(false) }
 
-    // Live signal for calibration while this screen is open.
-    DisposableEffect(state.usbConnected) {
-        if (state.usbConnected) LapRepository.fire("rssi on")
-        onDispose { if (state.usbConnected) LapRepository.fire("rssi off") }
+    val commands = timer?.let { draft.commandsFrom(it) }.orEmpty()
+    val unsaved = (commands.size - 1).coerceAtLeast(0) // commandsFrom() ends with "save"
+    val edit: (TimerSettings) -> Unit = { draft = it; status = null }
+
+    fun save(then: () -> Unit = {}) {
+        saving = true
+        status = null
+        scope.launch {
+            val r = LapRepository.send(commands)
+            status = when (r) {
+                LapRepository.Result.Ok -> "Saved to the timer" to false
+                is LapRepository.Result.Failed -> "The timer rejected “${r.command}”: ${r.reason}" to true
+            }
+            LapRepository.refresh()
+            saving = false
+            if (r == LapRepository.Result.Ok) then()
+        }
+    }
+    fun leave() = when {
+        page != null -> page = null
+        unsaved > 0 -> askLeave = true
+        else -> onBack()
+    }
+    BackHandler { leave() }
+    LaunchedEffect(status) {
+        if (status?.second == false) {
+            delay(3000)
+            status = null
+        }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp)
-            .navigationBarsPadding(),
-        verticalArrangement = Arrangement.spacedBy(28.dp),
-    ) {
-        Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.padding(end = 8.dp).size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(onClick = onBack)
-                    .semantics { contentDescription = "Back to timer" },
-                contentAlignment = Alignment.Center,
-            ) { Icons.Back(Hud.text) }
-            Text("Settings", style = heading(24.sp, spacing = 0.sp), modifier = Modifier.semantics { heading() })
-        }
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(key(page) { rememberScrollState() })
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.padding(end = 8.dp).size(44.dp).clip(RoundedCornerShape(22.dp)).clickable { leave() }
+                        .semantics { contentDescription = if (page == null) "Back to timer" else "Back to settings" },
+                    contentAlignment = Alignment.Center,
+                ) { Icons.Back(Hud.text) }
+                page?.let {
+                    PageIcon(it, 32.dp)
+                    HSpacer(10.dp)
+                }
+                Text(
+                    page?.title ?: "Settings",
+                    style = heading(if (page == null) 26.sp else 22.sp, spacing = 0.sp),
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
 
-        LapSoundSection()
-
-        ConnectionCard(state)
-
-        ChannelSection(draft, editable) { draft = it }
-        SensitivitySection(draft, editable) { draft = it }
-        FalseReadSection(draft, editable, state.session?.ignored ?: state.lastSession?.ignored, state.session != null) { draft = it }
-        RadioSection(draft, editable) { draft = it }
-        MessagesSection(draft, editable) { draft = it }
-        RaceDefaultsSection(draft, editable) { draft = it }
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val commands = timer?.let { draft.commandsFrom(it) }.orEmpty()
-            status?.let { (text, err) -> Text(text, style = body(13.sp, if (err) Hud.slow else Hud.muted)) }
-            PrimaryButton(
-                if (saving) "SAVING…" else "SAVE TO TIMER",
-                onClick = {
-                    saving = true
-                    status = null
-                    scope.launch {
-                        val r = LapRepository.send(commands)
-                        status = when (r) {
-                            LapRepository.Result.Ok -> "Saved to the timer" to false
-                            is LapRepository.Result.Failed -> "The timer rejected “${r.command}”: ${r.reason}" to true
-                        }
-                        LapRepository.refresh()
-                        saving = false
+            when (page) {
+                null -> CategoryList(state, timer?.let { draft }, timer, onOpen = { page = it })
+                Page.CHANNEL -> {
+                    // Live signal for calibration, only while this page is open.
+                    DisposableEffect(state.usbConnected) {
+                        if (state.usbConnected) LapRepository.fire("rssi on")
+                        onDispose { if (state.usbConnected) LapRepository.fire("rssi off") }
                     }
-                },
-                height = 60.dp,
-                size = 18,
-                enabled = editable && commands.isNotEmpty() && !saving,
-            )
+                    ReadOnlyNote(state)
+                    ChannelSection(draft, editable, edit)
+                    SensitivitySection(draft, editable, edit)
+                }
+                Page.FALSE_READ -> {
+                    ReadOnlyNote(state)
+                    FalseReadSection(draft, editable, state.session?.ignored ?: state.lastSession?.ignored, state.session != null, edit)
+                }
+                Page.RADIO -> {
+                    ReadOnlyNote(state)
+                    RadioSection(draft, editable, edit)
+                }
+                Page.MESSAGES -> {
+                    ReadOnlyNote(state)
+                    MessagesSection(draft, editable, edit)
+                }
+                Page.RACE -> {
+                    ReadOnlyNote(state)
+                    RaceDefaultsSection(draft, editable, edit)
+                }
+                Page.LAP_SOUND -> LapSoundPage()
+            }
+        }
+        SaveBar(unsaved, status, saving, editable, state) { save() }
+    }
+
+    if (askLeave) {
+        HudDialog("Unsaved changes", onDismiss = { askLeave = false }) {
             Text(
-                "Stored on the timer, so it works without the phone",
-                style = body(13.sp, Hud.muted),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                "${changes(unsaved)} not saved to the timer yet. Save them before leaving?",
+                style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
             )
+            PrimaryButton(
+                "SAVE TO TIMER", { askLeave = false; save(onBack) },
+                height = 56.dp, size = 18, enabled = editable && !saving,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton("Discard", { askLeave = false; onBack() }, Modifier.weight(1f))
+                SecondaryButton("Keep editing", { askLeave = false }, Modifier.weight(1f))
+            }
         }
     }
 }
 
-/** A phone setting, not the timer's: saved as soon as it's picked. */
-@OptIn(ExperimentalLayoutApi::class)
+private fun changes(n: Int) = if (n == 1) "1 change" else "$n changes"
+
+/** Pinned under every page while there's something to save, or a result to show. */
 @Composable
-private fun LapSoundSection() {
-    val sound by LapSounds.sound.collectAsStateWithLifecycle()
-    Section("Lap sound", "This phone") {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            LapSound.entries.forEach { s -> ChoiceChip(s.label, s == sound, { LapSounds.choose(s) }) }
+private fun SaveBar(unsaved: Int, status: Pair<String, Boolean>?, saving: Boolean, editable: Boolean, state: TimerState, onSave: () -> Unit) {
+    if (unsaved == 0 && status == null) return
+    Column(
+        Modifier.fillMaxWidth().background(Hud.surface).padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        val (text, err) = when {
+            status != null -> status
+            !state.usbConnected -> "${changes(unsaved)} not saved · plug the timer in to save" to false
+            state.armed -> "${changes(unsaved)} not saved · disarm to save" to false
+            else -> "${changes(unsaved)} not saved to the timer yet" to false
         }
-        Text("Plays on every gate pass, on the media volume. Tap one to hear it.", style = body(13.sp, Hud.muted))
+        Text(text, style = body(13.sp, if (err) Hud.slow else Hud.textSoft), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (unsaved > 0) {
+            PrimaryButton(if (saving) "SAVING…" else "SAVE TO TIMER", onSave, height = 52.dp, size = 18, enabled = editable && !saving)
+        }
     }
+}
+
+/** On a timer page: why the controls are greyed out, when they are. */
+@Composable
+private fun ReadOnlyNote(state: TimerState) {
+    val why = when {
+        !state.usbConnected -> "Read only: plug the timer in over USB to change these."
+        state.settings == null -> "Reading the timer's settings…"
+        state.armed -> "Read only while the timer is armed. Disarm it to change these."
+        else -> return
+    }
+    IgnoredNote(why)
+}
+
+@Composable
+private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSettings?, onOpen: (Page) -> Unit) {
+    val sound by LapSounds.sound.collectAsStateWithLifecycle()
+    ConnectionCard(state)
+    Group("Timer", "Saved on the timer") {
+        timerPages.forEachIndexed { i, p ->
+            CategoryRow(
+                p,
+                d?.let { p.summary(it) } ?: "Not read yet",
+                edited = d != null && timer != null && p.changed(d, timer),
+                divider = i < timerPages.lastIndex,
+            ) { onOpen(p) }
+        }
+    }
+    Group("This phone", "Saved right away") {
+        CategoryRow(Page.LAP_SOUND, "${sound.label} · plays on every gate pass", edited = false, divider = false) { onOpen(Page.LAP_SOUND) }
+    }
+}
+
+/** A labelled group of category rows on one card. */
+@Composable
+private fun Group(title: String, right: String, rows: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            SectionLabel(title, Modifier.weight(1f).semantics { heading() })
+            Text(right, style = body(12.sp, Hud.muted))
+        }
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hud.surface)
+                .border(1.dp, Hud.line, RoundedCornerShape(16.dp)),
+        ) { rows() }
+    }
+}
+
+@Composable
+private fun CategoryRow(p: Page, summary: String, edited: Boolean, divider: Boolean, onClick: () -> Unit) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            PageIcon(p)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(p.title, style = body(16.sp, weight = FontWeight.Medium))
+                    if (edited) {
+                        Text(
+                            "UNSAVED",
+                            style = mono(10.sp, Hud.selectedText, FontWeight.Bold),
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Hud.accentRing).padding(horizontal = 6.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                Text(summary, style = body(13.sp, Hud.muted))
+            }
+            Icons.Forward(Hud.chevron)
+        }
+        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(Hud.divider))
+    }
+}
+
+private fun Page.summary(d: TimerSettings): String = when (this) {
+    Page.CHANNEL -> {
+        val sens = if (d.sensitivity == Sensitivity.MED) "Medium" else d.sensitivity.label
+        "${d.channelLabel} · ${d.freqMhz} MHz · $sens sensitivity"
+    }
+    Page.FALSE_READ ->
+        "${fmtSeconds(d.minLapMs)} s min lap · " + if (d.ignoreParked) "parked quads ignored" else "parked quads count"
+    Page.RADIO -> listOfNotNull("Bluetooth".takeIf { d.ble }, "ESP-NOW".takeIf { d.espnow }).joinToString(" + ").ifEmpty { "USB only" }
+    Page.MESSAGES -> listOfNotNull(
+        d.event.takeIf { d.msgEvent && it.isNotBlank() },
+        (if (d.heatPrefix.isEmpty()) "#${d.nextHeat}" else "${d.heatPrefix} ${d.nextHeat}").takeIf { d.msgHeat },
+    ).joinToString(" · ").ifEmpty { "No event or heat name" }
+    Page.RACE -> (if (d.raceLimit == RaceLimit.LAPS) laps(d.raceLaps) else "${Format.minutes(d.raceTimeS)} race") +
+        " · BOOT arms " + if (d.mode == Mode.RACE) "a race" else "practice"
+    Page.LAP_SOUND -> ""
+}
+
+/** Whether this page's settings differ between [a] and [b]. */
+private fun Page.changed(a: TimerSettings, b: TimerSettings): Boolean {
+    fun TimerSettings.fields(): List<Any> = when (this@changed) {
+        Page.CHANNEL -> listOf(chan, freqMhz, enterDb, exitDb, alpha)
+        Page.FALSE_READ -> listOf(minLapMs, ignoreParked, maxPeakMs)
+        Page.RADIO -> listOf(ble, espnow, bindPhrase)
+        Page.MESSAGES -> listOf(msgEvent, event, msgHeat, heatPrefix, nextHeat, msgStart, textStage, textGo, textFinish, msgLaps, msgBest)
+        Page.RACE -> listOf(raceLaps, raceTimeS, raceLimit, mode, randomHold)
+        Page.LAP_SOUND -> emptyList()
+    }
+    return a.fields() != b.fields()
+}
+
+private fun laps(n: Int) = if (n == 1) "1 lap" else "$n laps"
+
+/** A phone setting: tapping a sound uses it straight away and plays it once; ▶ only previews. */
+@Composable
+private fun LapSoundPage() {
+    val current by LapSounds.sound.collectAsStateWithLifecycle()
+    Group("On every gate pass", "Saved on this phone") {
+        Column(Modifier.padding(6.dp).selectableGroup(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LapSound.entries.forEach { s ->
+                val on = s == current
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (on) Hud.selected else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        Modifier.weight(1f).heightIn(min = 56.dp)
+                            .selectable(on, role = Role.RadioButton) { LapSounds.select(s); LapSounds.play(s) }
+                            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Box(
+                            Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (on) Hud.accent else Hud.toggleOff, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { if (on) Box(Modifier.size(10.dp).clip(CircleShape).background(Hud.accent)) }
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(s.label, style = body(15.sp, if (on) Hud.selectedText else Hud.text, FontWeight.Medium))
+                            Text(s.hint, style = body(12.sp, Hud.muted))
+                        }
+                    }
+                    if (s.res != null) {
+                        Box(
+                            Modifier.padding(end = 4.dp).size(48.dp).clip(RoundedCornerShape(12.dp)).background(Hud.bg)
+                                .border(1.dp, Hud.line, RoundedCornerShape(12.dp))
+                                .clickable(role = Role.Button) { LapSounds.play(s) }
+                                .semantics { contentDescription = "Play ${s.label}" },
+                            contentAlignment = Alignment.Center,
+                        ) { Icons.Play(Hud.accent) }
+                    }
+                }
+            }
+        }
+    }
+    Text(
+        "Tap a sound to use it; it plays once so you hear what you picked. ▶ plays one without choosing it. Uses the media volume, so turn it up before you fly.",
+        style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
+    )
 }
 
 @Composable
@@ -171,7 +414,7 @@ private fun ConnectionCard(state: TimerState) {
     val s = state.settings
     HudCard(radius = 14.dp, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Dot(if (state.usbConnected) Hud.ok else Hud.toggleOff, 10.dp)
+            IconTile(if (state.usbConnected) Hud.ok else Hud.muted, if (state.usbConnected) Hud.okTint else Hud.bg) { tint, s -> Icons.Usb(tint, s) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     if (state.usbConnected) "Timer connected · USB" else "Timer not connected",
@@ -187,6 +430,7 @@ private fun ConnectionCard(state: TimerState) {
                     style = body(13.sp, Hud.muted),
                 )
             }
+            Dot(if (state.usbConnected) Hud.ok else Hud.toggleOff, 10.dp, ring = if (state.usbConnected) Hud.okTint else null)
         }
     }
 }
@@ -291,26 +535,19 @@ private fun FalseReadSection(d: TimerSettings, enabled: Boolean, ignored: Ignore
                     Text("Minimum lap time", style = body(15.sp, weight = FontWeight.Medium))
                     Text("Passes sooner than this are ignored", style = body(13.sp, Hud.muted))
                 }
-                val range = TimerSettings.MIN_LAP_RANGE_MS
-                val step = TimerSettings.MIN_LAP_STEP_MS
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.semantics { contentDescription = "Minimum lap time" },
-                ) {
-                    StepButton("−", "Shorter", enabled && d.minLapMs > range.first) {
-                        onChange(d.copy(minLapMs = (d.minLapMs - step).coerceIn(range)))
-                    }
-                    Text(
-                        "%.1f s".format(java.util.Locale.ROOT, d.minLapMs / 1000f),
-                        style = mono(18.sp),
-                        modifier = Modifier.widthIn(min = 64.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                    StepButton("+", "Longer", enabled && d.minLapMs < range.last) {
-                        onChange(d.copy(minLapMs = (d.minLapMs + step).coerceIn(range)))
-                    }
-                }
+                Stepper(
+                    "Minimum lap time", d.minLapMs, TimerSettings.MIN_LAP_RANGE_MS, { onChange(d.copy(minLapMs = it)) },
+                    format = { "${fmtSeconds(it)} s" },
+                    step = TimerSettings.MIN_LAP_STEP_MS,
+                    enabled = enabled,
+                    editText = { fmtSeconds(it) },
+                    parse = { t ->
+                        t.trim().toFloatOrNull()?.let { sec ->
+                            val step = TimerSettings.MIN_LAP_STEP_MS
+                            ((sec * 1000).roundToInt() + step / 2) / step * step
+                        }
+                    },
+                )
             }
             Text(
                 "Stops a crash into the gate, or a bounce back through it, from counting as a lap. Set it a few seconds under your fastest real lap.",
@@ -328,18 +565,7 @@ private fun FalseReadSection(d: TimerSettings, enabled: Boolean, ignored: Ignore
     }
 }
 
-private fun fmtSeconds(ms: Int) = if (ms % 1000 == 0) "${ms / 1000}" else "%.1f".format(java.util.Locale.ROOT, ms / 1000f)
-
-@Composable
-private fun StepButton(text: String, description: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Hud.bg)
-            .border(1.dp, Hud.line, RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) { Text(text, style = body(20.sp, if (enabled) Hud.text else Hud.toggleOff)) }
-}
+private fun fmtSeconds(ms: Int) = "%.1f".format(java.util.Locale.ROOT, ms / 1000f)
 
 /** A text field that keeps what's typed and reports it; [onText] applies it when valid. */
 @Composable
@@ -469,7 +695,7 @@ private fun MessagesSection(d: TimerSettings, enabled: Boolean, onChange: (Timer
                 }
             }
             // CMRC's lap row has no room for a "BEST" callout, so there's no switch for one.
-            SettingRow("Lap times", "Lap and position on row 3, each lap's time on row 15", divider = false) {
+            SettingRow("Lap times", "Lap and position on row 3 for 3 s, each lap's time on row 15 for 4 s", divider = false) {
                 HudSwitch(d.msgLaps, { onChange(d.copy(msgLaps = it)) }, "Broadcast lap times", enabled)
             }
         }
@@ -479,18 +705,21 @@ private fun MessagesSection(d: TimerSettings, enabled: Boolean, onChange: (Timer
 @Composable
 private fun RaceDefaultsSection(d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
     Section("Race defaults") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NumberField("Lap limit", "${d.raceLaps} laps", Modifier.weight(1f), enabled) { t ->
-                t.removeSuffix("laps").trim().toIntOrNull()?.takeIf { it in 1..99 }?.let { onChange(d.copy(raceLaps = it)) }
-            }
-            NumberField("Time limit", Format.minutes(d.raceTimeS), Modifier.weight(1f), enabled) { t ->
-                Format.parseMinutes(t)?.takeIf { it in 10..3600 }?.let { onChange(d.copy(raceTimeS = it)) }
-            }
-        }
-        Column {
+        HudCard(radius = 16.dp, padding = 16.dp, spacing = 0.dp) {
             SettingRow("Race ends on", null) {
                 ChoiceChip("Laps", d.raceLimit == RaceLimit.LAPS, { onChange(d.copy(raceLimit = RaceLimit.LAPS)) }, enabled)
                 ChoiceChip("Time", d.raceLimit == RaceLimit.TIME, { onChange(d.copy(raceLimit = RaceLimit.TIME)) }, enabled)
+            }
+            SettingRow("Lap limit", "Hold − or + to count fast") {
+                Stepper("Lap limit", d.raceLaps, 1..99, { onChange(d.copy(raceLaps = it)) }, format = ::laps, enabled = enabled)
+            }
+            SettingRow("Time limit", "Used when a race ends on time") {
+                var text by remember(d.raceTimeS) { mutableStateOf(Format.minutes(d.raceTimeS)) }
+                HudField(
+                    null, text,
+                    { t -> text = t; Format.parseMinutes(t)?.takeIf { it in 10..3600 }?.let { onChange(d.copy(raceTimeS = it)) } },
+                    Modifier.width(96.dp), monoText = true, numeric = true, maxLength = 6, enabled = enabled, height = 44.dp,
+                )
             }
             SettingRow("BOOT button arms", "Long press on the timer") {
                 ChoiceChip("Practice", d.mode == Mode.PRACTICE, { onChange(d.copy(mode = Mode.PRACTICE)) }, enabled)
@@ -500,6 +729,9 @@ private fun RaceDefaultsSection(d: TimerSettings, enabled: Boolean, onChange: (T
                 HudSwitch(d.randomHold, { onChange(d.copy(randomHold = it)) }, "Random start hold", enabled)
             }
         }
+        Text(
+            "Stored on the timer, so a race started with the BOOT button uses these without the phone.",
+            style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
+        )
     }
 }
-

@@ -41,6 +41,7 @@ object Hud {
     val avgLine = Color(0xFF5A626E)
     val chevron = Color(0xFF6B7480)
     val ok = Color(0xFF3DD68C)
+    val okTint = Color(0xFF0F2A1E)
     val bar = Color(0xFF3A414C)
     val toggleOff = Color(0xFF4A525E)
     val knobOff = Color(0xFF8A93A0)

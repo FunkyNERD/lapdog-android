@@ -10,14 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** What the phone plays on every gate pass. The sounds are made by tools/gen-sounds.py. */
-enum class LapSound(val label: String, @RawRes val res: Int?) {
-    BARK("Bark", R.raw.lap_bark),
-    TONE("Tone", R.raw.lap_tone),
-    DING("Ding", R.raw.lap_ding),
-    BELL("Bell", R.raw.lap_bell),
-    CHIRP("Chirp", R.raw.lap_chirp),
-    DOUBLE_BEEP("Double beep", R.raw.lap_double_beep),
-    OFF("Off", null),
+enum class LapSound(val label: String, val hint: String, @RawRes val res: Int?) {
+    BARK("Bark", "A real dog, the default", R.raw.lap_bark),
+    TONE("Tone", "Clean 880 Hz beep", R.raw.lap_tone),
+    DING("Ding", "Bright struck note", R.raw.lap_ding),
+    BELL("Bell", "Small bell, rings on", R.raw.lap_bell),
+    CHIRP("Chirp", "Quick rising whistle", R.raw.lap_chirp),
+    DOUBLE_BEEP("Double beep", "Like a stopwatch lap button", R.raw.lap_double_beep),
+    OFF("Off", "Silent: laps still count", null),
 }
 
 /**
@@ -50,11 +50,10 @@ object LapSounds {
         }
     }
 
-    /** Chooses the sound and plays it once, so the pilot hears what they picked. */
-    fun choose(s: LapSound) {
+    /** Makes [s] the lap sound (saved on the phone). Previews use [play]. */
+    fun select(s: LapSound) {
         _sound.value = s
         prefs?.edit()?.putString(KEY, s.name)?.apply()
-        play(s)
     }
 
     /** Plays [s] (the chosen sound by default); nothing for Off or before [init]. */
