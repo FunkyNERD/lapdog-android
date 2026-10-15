@@ -710,15 +710,17 @@ private fun RaceDefaultsSection(d: TimerSettings, enabled: Boolean, onChange: (T
                 ChoiceChip("Laps", d.raceLimit == RaceLimit.LAPS, { onChange(d.copy(raceLimit = RaceLimit.LAPS)) }, enabled)
                 ChoiceChip("Time", d.raceLimit == RaceLimit.TIME, { onChange(d.copy(raceLimit = RaceLimit.TIME)) }, enabled)
             }
-            SettingRow("Lap limit", "Hold − or + to count fast") {
+            SettingRow("Lap limit", "Used when a race ends on laps") {
                 Stepper("Lap limit", d.raceLaps, 1..99, { onChange(d.copy(raceLaps = it)) }, format = ::laps, enabled = enabled)
             }
             SettingRow("Time limit", "Used when a race ends on time") {
-                var text by remember(d.raceTimeS) { mutableStateOf(Format.minutes(d.raceTimeS)) }
-                HudField(
-                    null, text,
-                    { t -> text = t; Format.parseMinutes(t)?.takeIf { it in 10..3600 }?.let { onChange(d.copy(raceTimeS = it)) } },
-                    Modifier.width(96.dp), monoText = true, numeric = true, maxLength = 6, enabled = enabled, height = 44.dp,
+                Stepper(
+                    "Time limit", d.raceTimeS, 30..3600, { onChange(d.copy(raceTimeS = it)) },
+                    format = Format::minutes,
+                    step = 30,
+                    enabled = enabled,
+                    editText = Format::minutes,
+                    parse = Format::parseMinutes,
                 )
             }
             SettingRow("BOOT button arms", "Long press on the timer") {

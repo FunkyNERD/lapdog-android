@@ -426,8 +426,9 @@ fun Stepper(
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     var typing by remember { mutableStateOf(false) }
+    // Steps land on multiples of [step], so an odd value typed in snaps back onto the grid.
     fun nudge(by: Int) {
-        val v = (current + by).coerceIn(range)
+        val v = (if (by > 0) (current / step + 1) * step else ((current - 1) / step) * step).coerceIn(range)
         if (v != current) change(v)
     }
     Row(
