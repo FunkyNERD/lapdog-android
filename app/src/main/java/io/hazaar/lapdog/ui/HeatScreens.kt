@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -239,27 +241,35 @@ fun HeatScreen(h: HeatRecord, pb: PersonalBests, onBack: () -> Unit) {
             Text(text.subtitle(h), style = body(14.sp, Hud.muted).copy(lineHeight = 21.sp))
         }
 
-        // Best-lap hero.
-        Row(
+        // Best-lap hero. The time gets the whole width to itself (the PB chip sits on the label
+        // row) and shrinks rather than wraps on narrow phones or with large system fonts.
+        Column(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(Hud.surface)
                 .border(1.dp, Hud.line, RoundedCornerShape(16.dp))
-                .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.Bottom,
+                .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Label(st.best?.let { "Best lap · lap ${it.lap}" } ?: "Best lap", size = 13)
-                Text(st.best?.let { Format.lap(it.ms) } ?: "—", style = mono(48.sp, Hud.best).copy(lineHeight = 48.sp))
+            Row(Modifier.fillMaxWidth().heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+                Label(st.best?.let { "Best lap · lap ${it.lap}" } ?: "Best lap", size = 13, modifier = Modifier.weight(1f))
+                if (pb.isBestLap(h)) {
+                    Text(
+                        "PERSONAL BEST",
+                        style = mono(11.sp, Hud.best).copy(letterSpacing = 0.08.em),
+                        maxLines = 1,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Hud.bestTag).padding(horizontal = 8.dp, vertical = 5.dp),
+                    )
+                }
             }
-            if (pb.isBestLap(h)) {
-                Text(
-                    "PERSONAL BEST",
-                    style = mono(11.sp, Hud.best).copy(letterSpacing = 0.08.em),
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Hud.bestTag).padding(horizontal = 8.dp, vertical = 5.dp),
-                )
-            }
+            BasicText(
+                st.best?.let { Format.lap(it.ms) } ?: "—",
+                style = mono(48.sp, Hud.best).copy(lineHeight = 52.sp),
+                maxLines = 1,
+                softWrap = false,
+                autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 48.sp, stepSize = 2.sp),
+            )
         }
 
         StatGrid(statTiles(h, text))
