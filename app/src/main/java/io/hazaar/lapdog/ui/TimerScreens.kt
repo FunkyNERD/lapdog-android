@@ -157,11 +157,25 @@ fun IdleScreen(
                 s?.let { "+${it.enterDb.toInt()} / +${it.exitDb.toInt()} dB" } ?: "",
                 Modifier.weight(1f),
             )
-            val link = s?.link ?: if (state.lastHeardVia == Via.BLE) TimerSettings.Link.BLE else null
+            // Unread settings: hearing BLE still says Bluetooth is on.
+            val ble = s?.ble ?: (state.lastHeardVia == Via.BLE)
+            val espnow = s?.espnow ?: false
             InfoCard(
                 "Radio out",
-                when (link) { TimerSettings.Link.BLE -> "BLE"; TimerSettings.Link.ESPNOW -> "ESP-NOW"; null -> "—" },
-                when (link) { TimerSettings.Link.BLE -> "to this app"; TimerSettings.Link.ESPNOW -> "to goggles"; null -> "" },
+                when {
+                    ble && espnow -> "BOTH"
+                    ble -> "BLE"
+                    espnow -> "ESP-NOW"
+                    s != null -> "USB"
+                    else -> "—"
+                },
+                when {
+                    ble && espnow -> "app · goggles"
+                    ble -> "to this app"
+                    espnow -> "to goggles"
+                    s != null -> "radio off"
+                    else -> ""
+                },
                 Modifier.weight(1f),
                 monoDetail = false,
             )

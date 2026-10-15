@@ -6,7 +6,7 @@ import org.junit.Test
 
 class TimerSettingsTest {
     private val timer = listOf(
-        "chan=R4", "freq=5769", "enter=10.0", "exit=5.0", "alpha=0.20", "minlap=3000", "link=ble",
+        "chan=R4", "freq=5769", "enter=10.0", "exit=5.0", "alpha=0.20", "minlap=3000", "ble=on", "espnow=off",
         "phrase=my bind phrase", "event=Thursday Backyard", "prefix=Heat", "heat=4", "msg.best=off",
         "race.limit=time", "race.time=90", "mode=race", "fw=0.2.0", "state=idle",
     ).fold(TimerSettings()) { s, kv -> kv.split('=', limit = 2).let { s.with(it[0], it[1]) } }
@@ -31,9 +31,9 @@ class TimerSettingsTest {
 
     @Test
     fun writesOnlyWhatChangedThenSaves() {
-        val edited = timer.copy(event = "Club night", link = TimerSettings.Link.ESPNOW, nextHeat = 1, msgBest = true)
+        val edited = timer.copy(event = "Club night", espnow = true, nextHeat = 1, msgBest = true)
         assertEquals(
-            listOf("set link espnow", "set event Club night", "set heat 1", "set msg.best on", "save"),
+            listOf("set espnow on", "set event Club night", "set heat 1", "set msg.best on", "save"),
             edited.commandsFrom(timer),
         )
     }

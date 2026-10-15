@@ -51,7 +51,6 @@ import io.hazaar.lapdog.protocol.ElrsUid
 import io.hazaar.lapdog.protocol.Format
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.TimerSettings
-import io.hazaar.lapdog.protocol.TimerSettings.Link
 import io.hazaar.lapdog.protocol.TimerSettings.RaceLimit
 import io.hazaar.lapdog.protocol.TimerSettings.Sensitivity
 import io.hazaar.lapdog.service.LapRepository
@@ -391,28 +390,25 @@ private fun fmtDb(v: Float) = if (v == v.toInt().toFloat()) "${v.toInt()}" else 
 @Composable
 private fun RadioSection(d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
     Section("Radio output") {
-        Segmented(
-            listOf("Bluetooth" to "LapDog app", "ESP-NOW" to "Goggles · RacePanel"),
-            if (d.link == Link.ESPNOW) 1 else 0,
-            { onChange(d.copy(link = if (it == 1) Link.ESPNOW else Link.BLE)) },
-            height = 64.dp,
-            enabled = enabled,
-            description = "Radio output",
-        )
-        Text(
-            if (d.link == Link.BLE)
-                "The timer has one radio, so it sends over Bluetooth or ESP-NOW, not both. Bluetooth reaches this app with the phone unplugged; goggles get nothing."
-            else
-                "The timer has one radio, so it sends over Bluetooth or ESP-NOW, not both. Goggles and RacePanel show laps on the OSD; this app only hears the timer over USB.",
-            style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
-        )
-        if (d.link == Link.ESPNOW) {
+        SettingRow("Bluetooth", "Laps to this app, phone unplugged") {
+            HudSwitch(d.ble, { onChange(d.copy(ble = it)) }, "Bluetooth output", enabled)
+        }
+        SettingRow("ESP-NOW", "Laps on the goggles OSD and RacePanel") {
+            HudSwitch(d.espnow, { onChange(d.copy(espnow = it)) }, "ESP-NOW output", enabled)
+        }
+        if (d.espnow) {
             HudField("ELRS bind phrase", d.bindPhrase, { onChange(d.copy(bindPhrase = it)) }, password = true, maxLength = 63, enabled = enabled)
             Row {
                 Label("UID ", size = 12)
                 Text(ElrsUid.format(ElrsUid.fromBindPhrase(d.bindPhrase)), style = mono(12.sp, Hud.muted, FontWeight.Medium))
                 Label(" · 2.4 GHz ch 1", size = 12)
             }
+        }
+        if (d.ble && d.espnow) {
+            Text(
+                "With both on, the goggles get each lap first and this app about half a second later. Lap times are measured on the timer, so they're unaffected.",
+                style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
+            )
         }
         SettingRow("USB", "Everything, whenever the phone is plugged in", divider = false) {
             Text("Always", style = body(13.sp, Hud.muted))
@@ -424,7 +420,7 @@ private fun RadioSection(d: TimerSettings, enabled: Boolean, onChange: (TimerSet
 private fun MessagesSection(d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
     Section("Race messages") {
         Text(
-            "Kept on the timer. It counts heats itself and sends these over ${if (d.link == Link.BLE) "Bluetooth" else "ESP-NOW"} with the laps, so goggles and this app show the same thing.",
+            "Kept on the timer. It counts heats itself and sends these with the laps over every radio output that's on, so goggles and this app show the same thing.",
             style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
         )
         Column {

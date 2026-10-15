@@ -16,7 +16,9 @@ data class TimerSettings(
     /** Reject peaks longer than [maxPeakMs]: a quad parked at the gate. */
     val ignoreParked: Boolean = true,
     val maxPeakMs: Int = 1500,
-    val link: Link = Link.BLE,
+    /** Radio outputs, independent: either, both or neither. USB is always on. */
+    val ble: Boolean = true,
+    val espnow: Boolean = false,
     val bindPhrase: String = "",
     val event: String = "",
     val heatPrefix: String = "Heat",
@@ -38,7 +40,6 @@ data class TimerSettings(
     /** "idle", "practice" or "race" when read. */
     val state: String = "idle",
 ) {
-    enum class Link(val key: String) { BLE("ble"), ESPNOW("espnow") }
     enum class RaceLimit(val key: String) { LAPS("laps"), TIME("time") }
 
     enum class Sensitivity(val label: String, val enterDb: Float, val exitDb: Float) {
@@ -74,7 +75,8 @@ data class TimerSettings(
         set("minlap", minLapMs, current.minLapMs)
         set("park", onOff(ignoreParked), onOff(current.ignoreParked))
         set("maxpeak", maxPeakMs, current.maxPeakMs)
-        set("link", link.key, current.link.key)
+        set("ble", onOff(ble), onOff(current.ble))
+        set("espnow", onOff(espnow), onOff(current.espnow))
         set("phrase", bindPhrase, current.bindPhrase)
         set("event", event, current.event)
         set("prefix", heatPrefix, current.heatPrefix)
@@ -106,7 +108,8 @@ data class TimerSettings(
         "minlap" -> v.toIntOrNull()?.let { copy(minLapMs = it) } ?: this
         "park" -> copy(ignoreParked = v == "on")
         "maxpeak" -> v.toIntOrNull()?.let { copy(maxPeakMs = it) } ?: this
-        "link" -> Link.entries.firstOrNull { it.key == v }?.let { copy(link = it) } ?: this
+        "ble" -> copy(ble = v == "on")
+        "espnow" -> copy(espnow = v == "on")
         "phrase" -> copy(bindPhrase = v)
         "event" -> copy(event = v)
         "prefix" -> copy(heatPrefix = v)
