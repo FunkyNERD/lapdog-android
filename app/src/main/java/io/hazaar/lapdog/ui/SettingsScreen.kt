@@ -393,7 +393,7 @@ private fun RadioSection(d: TimerSettings, enabled: Boolean, onChange: (TimerSet
         SettingRow("Bluetooth", "Laps to this app, phone unplugged") {
             HudSwitch(d.ble, { onChange(d.copy(ble = it)) }, "Bluetooth output", enabled)
         }
-        SettingRow("ESP-NOW", "Laps on the goggles OSD and RacePanel") {
+        SettingRow("ESP-NOW", "Laps on the goggles OSD and LapDog LCD") {
             HudSwitch(d.espnow, { onChange(d.copy(espnow = it)) }, "ESP-NOW output", enabled)
         }
         if (d.espnow) {

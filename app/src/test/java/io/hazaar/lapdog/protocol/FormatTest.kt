@@ -27,7 +27,7 @@ class FormatTest {
     }
 
     @Test
-    fun osdDropsGlyphsLikeRacePanel() {
+    fun osdDropsGlyphsLikeLapDogLcd() {
         assertEquals("ARM NOW", Format.osd("w ARM NOW x"))
         assertEquals("GO!", Format.osd("w   GO!   x"))
         assertEquals("L2:17.62 | T35.24", Format.osd("x L2:17.62 | T35.24 w"))

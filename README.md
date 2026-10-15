@@ -29,4 +29,4 @@ Needs `local.properties` with `sdk.dir=` pointing at your Android SDK.
 | `service/` | Foreground service running both transports; `LapRepository` state + command queue |
 | `ui/` | Theme (bundled Chakra Petch / IBM Plex Sans / JetBrains Mono, OFL in `fonts-licenses/`) and screens |
 
-ESP-NOW can't be received on Android directly. Use RacePanel or another ESP32 as a USB bridge if needed.
+ESP-NOW can't be received on Android directly. Use LapDog LCD or another ESP32 as a USB bridge if needed.
