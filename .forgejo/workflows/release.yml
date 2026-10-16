@@ -1,0 +1,129 @@
+# Builds an app release when a version tag is pushed - cut one with:
+#
+#   tools/release.sh 1.2.3
+#
+# which sets versionName (and bumps versionCode) in app/build.gradle.kts, commits, tags v1.2.3
+# and pushes. The unit tests run, the release APK is built and signed with the LapDog release key,
+# and it's published as a Forgejo release:
+#
+#   lapdog.apk(.sha256)     the signed app
+#
+# The LapDog website (lapdog-web, /app) offers the latest (non-prerelease) release for download.
+# Tags with a suffix (v1.2.3-beta.1) are published as prereleases, which it ignores.
+#
+# Signing needs two repo secrets, made by tools/make-signing-key.sh: LAPDOG_KEYSTORE_B64 (the
+# keystore, base64) and LAPDOG_KEYSTORE_PASSWORD. Without them the build fails rather than
+# publishing an unsigned APK.
+name: Release app
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  ANDROID_HOME: /opt/android-sdk
+  # Android command-line tools 19.0, then the platform and build tools AGP needs.
+  CMDLINE_TOOLS_URL: https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+  SDK_PACKAGES: platforms;android-35 build-tools;35.0.0
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: docker
+    container:
+      image: eclipse-temurin:17-jdk
+    steps:
+      - name: Install tools
+        # nodejs: the checkout/cache steps are JavaScript actions, run inside this container.
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq && apt-get install -y -qq git curl jq unzip nodejs >/dev/null
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Cache the Android SDK and Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/android-sdk
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-android-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', '.forgejo/workflows/release.yml') }}
+
+      - name: Install the Android SDK
+        run: |
+          if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            mkdir -p "$ANDROID_HOME/cmdline-tools"
+            curl -fsSL -o /tmp/cmdline-tools.zip "$CMDLINE_TOOLS_URL"
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
+            mv /tmp/cmdline-tools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+          fi
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" $SDK_PACKAGES >/dev/null
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+      - name: Work out the version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "::error::Tag $TAG isn't vMAJOR.MINOR.PATCH"; exit 1; }
+          PRERELEASE=false
+          case "$VERSION" in *-*) PRERELEASE=true ;; esac
+          # The tagged commit's versionName must match, so the app reports the same version.
+          # tools/release.sh does this; a hand-made tag might not.
+          grep -Eq "^ *versionName = \"$VERSION\"$" app/build.gradle.kts || {
+            echo "::error::app/build.gradle.kts's versionName doesn't match $TAG - cut releases with tools/release.sh"; exit 1; }
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+
+      - name: Decode the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.LAPDOG_KEYSTORE_B64 }}
+        run: |
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::The LAPDOG_KEYSTORE_B64 secret isn't set - run tools/make-signing-key.sh"; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "LAPDOG_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Test and build
+        env:
+          LAPDOG_KEYSTORE_PASSWORD: ${{ secrets.LAPDOG_KEYSTORE_PASSWORD }}
+        run: ./gradlew --no-daemon testDebugUnitTest assembleRelease
+
+      - name: Check the signature
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/lapdog.apk
+          apksigner verify --print-certs dist/lapdog.apk | grep -i 'certificate SHA-256'
+          (cd dist && sha256sum lapdog.apk > lapdog.apk.sha256 && cat lapdog.apk.sha256)
+          rm -f "$LAPDOG_KEYSTORE"
+
+      - name: Release notes
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          {
+            echo "LapDog Android app ${VERSION}."
+            echo
+            if [ -n "$PREV" ]; then echo "Changes since ${PREV}:"; git log --pretty='- %s' "${PREV}..${TAG}"; else git log --pretty='- %s' -20 "${TAG}"; fi
+          } > notes.md
+          cat notes.md
+
+      - name: Publish release
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          API="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          BODY=$(jq -n --arg tag "$TAG" --arg name "LapDog app ${VERSION}" --rawfile body notes.md \
+            --argjson pre "$PRERELEASE" '{tag_name: $tag, name: $name, body: $body, prerelease: $pre}')
+          ID=$(curl -fsS -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" \
+            -d "$BODY" "${API}/releases" | jq -r .id)
+          for f in dist/*; do
+            name=$(basename "$f")
+            curl -fsS -X POST -H "Authorization: token ${TOKEN}" -F "attachment=@${f}" "${API}/releases/${ID}/assets?name=${name}" >/dev/null
+          done
+          echo "Published release ${ID} for ${TAG}"

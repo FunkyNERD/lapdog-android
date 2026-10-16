@@ -17,8 +17,24 @@ android {
         versionName = "0.1.0"
     }
 
+    // Release builds are signed with the LapDog release key when LAPDOG_KEYSTORE points at it
+    // (the release workflow decodes it from a secret; tools/make-signing-key.sh makes it).
+    // Without it, assembleRelease gives an unsigned APK.
+    val keystore = System.getenv("LAPDOG_KEYSTORE")?.takeIf { it.isNotBlank() }?.let(::file)
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = keystore
+                storePassword = System.getenv("LAPDOG_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LAPDOG_KEY_ALIAS") ?: "lapdog"
+                keyPassword = System.getenv("LAPDOG_KEY_PASSWORD") ?: System.getenv("LAPDOG_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

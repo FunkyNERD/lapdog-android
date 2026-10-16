@@ -18,6 +18,24 @@ The **timer** is the source of truth for event name, heat prefix and heat number
 
 Needs `local.properties` with `sdk.dir=` pointing at your Android SDK.
 
+## Releases
+
+The website offers the app at https://lapdog.funkynerd.com/app, from this repo's latest release. Cut one from an up-to-date `main`:
+
+```bash
+tools/release.sh 0.2.0
+```
+
+It sets `versionName`, bumps `versionCode`, commits, tags `v0.2.0` and pushes. The tag runs `.forgejo/workflows/release.yml`: unit tests, a signed `assembleRelease`, and a Forgejo release with `lapdog.apk` and `lapdog.apk.sha256`. A suffixed tag (`0.2.0-beta.1`) is a prerelease, which the website ignores.
+
+Release builds are signed with the LapDog release key, from the repo secrets `LAPDOG_KEYSTORE_B64` and `LAPDOG_KEYSTORE_PASSWORD`. Make the key and store them once with:
+
+```bash
+FORGEJO_TOKEN=<token with write:repository> tools/make-signing-key.sh
+```
+
+It keeps the key in `~/.config/lapdog-android/`. **Back that folder up.** Every release must be signed with the same key, or Android won't install it as an update. Locally, `LAPDOG_KEYSTORE` (path), `LAPDOG_KEYSTORE_PASSWORD` and optionally `LAPDOG_KEY_ALIAS` sign `assembleRelease` the same way; without them it builds unsigned.
+
 ## Layout
 
 | Path | What |
