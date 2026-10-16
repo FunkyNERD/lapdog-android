@@ -63,7 +63,9 @@ jobs:
             mv /tmp/cmdline-tools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
           fi
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses >/dev/null
+          # yes is killed by SIGPIPE once sdkmanager stops reading, which pipefail would turn into
+          # a failure (exit 141), so its status is ignored.
+          (yes || true) | "$SDKMANAGER" --licenses >/dev/null
           "$SDKMANAGER" $SDK_PACKAGES >/dev/null
           echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
 
@@ -87,8 +89,9 @@ jobs:
           KEYSTORE_B64: ${{ secrets.LAPDOG_KEYSTORE_B64 }}
         run: |
           [ -n "$KEYSTORE_B64" ] || { echo "::error::The LAPDOG_KEYSTORE_B64 secret isn't set - run tools/make-signing-key.sh"; exit 1; }
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "LAPDOG_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          KEYSTORE="${RUNNER_TEMP:-/tmp}/release.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$KEYSTORE"
+          echo "LAPDOG_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
 
       - name: Test and build
         env:
