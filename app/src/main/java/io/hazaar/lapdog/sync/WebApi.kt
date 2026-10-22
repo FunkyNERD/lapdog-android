@@ -33,7 +33,7 @@ class WebApi(private val baseUrl: String = BASE_URL, private val version: String
     }
 
     fun pair(code: String, name: String): Response =
-        request("POST", "/api/v1/pair", null, json.encodeToString(PairBody.serializer(), PairBody(code, name, version)))
+        request("POST", "/api/v1/pair", null, json.encodeToString(PairBody.serializer(), PairBody(code, name, version, kind = "app")))
 
     fun device(token: String) = request("GET", "/api/v1/device", token)
 
@@ -67,7 +67,7 @@ class WebApi(private val baseUrl: String = BASE_URL, private val version: String
     }
 
     @kotlinx.serialization.Serializable
-    private data class PairBody(val code: String, val name: String, val firmware: String)
+    private data class PairBody(val code: String, val name: String, val firmware: String, val kind: String)
 
     companion object {
         const val BASE_URL = "https://lapdog.funkynerd.com"
