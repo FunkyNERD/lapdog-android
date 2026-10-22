@@ -18,6 +18,9 @@ data class UploadLap(
  * The body of `PUT /api/v1/races/{localId}` for one heat (lapdog-web
  * docs/dev/device-api.md, "Uploading a race"). Practice heats go up too: the website
  * keeps them as races without a position, filed under the heat's event or its day.
+ *
+ * `timerHeat` and the exact ms lap times let the website merge this heat with LapDog LCD's
+ * copy of it when ESP-NOW is on. No field has a default: the API client doesn't send defaults.
  */
 @Serializable
 data class RaceUpload(
@@ -28,6 +31,14 @@ data class RaceUpload(
     val event: String? = null,
     @SerialName("started_at") val startedAt: Long,
     val laps: List<UploadLap>,
+    val source: String,
+    /** "practice" or "race". */
+    val mode: String,
+    @SerialName("timer_heat") val timerHeat: Int,
+    /** Race: GO to the first gate pass. */
+    @SerialName("holeshot_ms") val holeshotMs: Long?,
+    /** Race: GO to the finish, the timer's own figure. */
+    @SerialName("race_ms") val raceMs: Long?,
 ) {
     companion object {
         fun of(h: HeatRecord): RaceUpload {
@@ -50,6 +61,11 @@ data class RaceUpload(
                 event = h.event.trim().takeIf { it.isNotEmpty() }?.take(100),
                 startedAt = h.startedAt / 1000,
                 laps = laps,
+                source = "app",
+                mode = if (h.isRace) "race" else "practice",
+                timerHeat = h.heat,
+                holeshotMs = h.holeshotMs,
+                raceMs = h.raceMs,
             )
         }
 

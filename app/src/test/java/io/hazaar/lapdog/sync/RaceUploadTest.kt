@@ -31,6 +31,11 @@ class RaceUploadTest {
         assertEquals(listOf(22_845L, 43_716L, 65_716L), r.laps.map { it.tMs })
         assertEquals(listOf(false, true, false), r.laps.map { it.best })
         assertEquals(21.345, r.laps[0].timeS, 1e-9)
+        assertEquals("app", r.source)
+        assertEquals("race", r.mode)
+        assertEquals(3, r.timerHeat)
+        assertEquals(1_500L, r.holeshotMs)
+        assertEquals(65_716L, r.raceMs)
     }
 
     @Test
@@ -42,6 +47,8 @@ class RaceUploadTest {
         val r = RaceUpload.of(h)
         assertEquals(5, r.lapCount) // lap 3 was missed, not skipped
         assertEquals("7 · Practice", r.label)
+        assertEquals("practice", r.mode)
+        assertEquals(7, r.timerHeat)
         assertNull(r.event)
         assertEquals(listOf(30_000L, 61_000L, null, null), r.laps.map { it.tMs })
         assertEquals(120.5, r.totalTimeS!!, 1e-9)
@@ -57,7 +64,10 @@ class RaceUploadTest {
     fun jsonMatchesTheDeviceApi() {
         val h = HeatRecord(id = started, heat = 1, laps = listOf(LapEntry(1, 20_000)))
         val obj = Json { explicitNulls = false }.encodeToJsonElement(RaceUpload.serializer(), RaceUpload.of(h)).jsonObject
-        assertEquals(setOf("lap_count", "total_time_s", "best_lap_s", "label", "started_at", "laps"), obj.keys)
+        assertEquals(
+            setOf("lap_count", "total_time_s", "best_lap_s", "label", "started_at", "laps", "source", "mode", "timer_heat"),
+            obj.keys,
+        )
         assertEquals(setOf("lap", "t_ms", "time_s", "best"), obj["laps"]!!.let { (it as kotlinx.serialization.json.JsonArray)[0].jsonObject.keys })
     }
 
