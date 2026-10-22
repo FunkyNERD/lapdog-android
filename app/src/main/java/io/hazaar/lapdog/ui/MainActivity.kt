@@ -31,6 +31,7 @@ import io.hazaar.lapdog.service.HeatStore
 import io.hazaar.lapdog.service.LapSounds
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapService
+import io.hazaar.lapdog.sync.WebSync
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.LapDogTheme
 import kotlinx.coroutines.launch
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         HeatStore.init(applicationContext)
         LapSounds.init(applicationContext)
+        WebSync.init(applicationContext)
         // Listen from the start: USB and BLE both run in the foreground service.
         requestPermissions.launch(neededPermissions())
         setContent {

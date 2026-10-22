@@ -36,6 +36,8 @@ FORGEJO_TOKEN=<token with write:repository> tools/make-signing-key.sh
 
 It keeps the key in `~/.config/lapdog-android/`. **Back that folder up.** Every release must be signed with the same key, or Android won't install it as an update. Locally, `LAPDOG_KEYSTORE` (path), `LAPDOG_KEYSTORE_PASSWORD` and optionally `LAPDOG_KEY_ALIAS` sign `assembleRelease` the same way; without them it builds unsigned.
 
+**Website sync** (Settings > Website sync) uploads finished heats to the pilot's account on lapdog.funkynerd.com with the same device API LapDog LCD uses (lapdog-web `docs/dev/device-api.md`). Pair with a code from the website's Devices page. Then every heat with at least one lap, practice or race, goes up as a race: after each heat ("Sync after each heat", on by default, via WorkManager so it waits for a network and retries), or with **Sync now** there or on the Heats screen. Race numbers come from the website's `counters` (shared with the pilot's LCD dashboards, and pushed past every number used), not the phone's heat ids. They're kept per heat in `files/sync.json`, so a retry reuses its number.
+
 ## Layout
 
 | Path | What |
@@ -47,6 +49,7 @@ It keeps the key in `~/.config/lapdog-android/`. **Back that folder up.** Every 
 | `transport/UsbTransport.kt` | CDC-ACM on Espressif 303A:1001, reads lines and writes commands, reconnects |
 | `transport/BleTransport.kt` | One long-running scan, `ScanFilter` on manufacturer ID 0xFFFF, low latency |
 | `service/` | Foreground service running both transports; `LapRepository` state + command queue; `LapSounds` (lap sound choice + SoundPool) |
+| `sync/` | Website sync: `WebApi` (device API over HTTPS), `RaceUpload` (heat → race body), `SyncState` (pairing + numbering, `files/sync.json`), `WebSync` + `SyncWorker` |
 | `ui/` | Theme (bundled Chakra Petch / IBM Plex Sans / JetBrains Mono, OFL in `fonts-licenses/`) and screens |
 
 ESP-NOW can't be received on Android directly. Use LapDog LCD or another ESP32 as a USB bridge if needed.

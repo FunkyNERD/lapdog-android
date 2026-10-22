@@ -63,11 +63,13 @@ import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.TimerSettings
 import io.hazaar.lapdog.protocol.TimerSettings.RaceLimit
 import io.hazaar.lapdog.protocol.TimerSettings.Sensitivity
+import io.hazaar.lapdog.service.HeatStore
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapSound
 import io.hazaar.lapdog.service.LapSounds
 import io.hazaar.lapdog.state.Ignored
 import io.hazaar.lapdog.state.TimerState
+import io.hazaar.lapdog.sync.WebSync
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.body
 import io.hazaar.lapdog.ui.theme.heading
@@ -86,6 +88,7 @@ private enum class Page(val title: String, val phone: Boolean = false) {
     MESSAGES("Race messages"),
     RACE("Race defaults"),
     LAP_SOUND("Lap sound", phone = true),
+    SYNC("Website sync", phone = true),
 }
 
 private val timerPages = Page.entries.filter { !it.phone }
@@ -101,6 +104,7 @@ private fun PageIcon(p: Page, size: androidx.compose.ui.unit.Dp = 40.dp) {
             Page.MESSAGES -> Icons.Message(tint, s)
             Page.RACE -> Icons.Flag(tint, s)
             Page.LAP_SOUND -> Icons.Speaker(tint, s)
+            Page.SYNC -> Icons.Cloud(tint, s)
         }
     }
 }
@@ -209,6 +213,7 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
                     RaceDefaultsSection(draft, editable, edit)
                 }
                 Page.LAP_SOUND -> LapSoundPage()
+                Page.SYNC -> SyncPage()
             }
         }
         SaveBar(unsaved, status, saving, editable, state) { save() }
@@ -270,6 +275,8 @@ private fun ReadOnlyNote(state: TimerState) {
 @Composable
 private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSettings?, onOpen: (Page) -> Unit) {
     val sound by LapSounds.sound.collectAsStateWithLifecycle()
+    val sync by WebSync.state.collectAsStateWithLifecycle()
+    val heats by HeatStore.heats.collectAsStateWithLifecycle()
     ConnectionCard(state)
     Group("Timer", "Saved on the timer") {
         timerPages.forEachIndexed { i, p ->
@@ -282,7 +289,8 @@ private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSetti
         }
     }
     Group("This phone", "Saved right away") {
-        CategoryRow(Page.LAP_SOUND, "${sound.label} · plays on every gate pass", edited = false, divider = false) { onOpen(Page.LAP_SOUND) }
+        CategoryRow(Page.LAP_SOUND, "${sound.label} · plays on every gate pass", edited = false, divider = true) { onOpen(Page.LAP_SOUND) }
+        CategoryRow(Page.SYNC, syncSummary(sync, WebSync.pending(heats, sync).size), edited = false, divider = false) { onOpen(Page.SYNC) }
     }
 }
 
@@ -344,7 +352,7 @@ private fun Page.summary(d: TimerSettings): String = when (this) {
     ).joinToString(" · ").ifEmpty { "No event or heat name" }
     Page.RACE -> (if (d.raceLimit == RaceLimit.LAPS) laps(d.raceLaps) else "${Format.minutes(d.raceTimeS)} race") +
         " · BOOT arms " + if (d.mode == Mode.RACE) "a race" else "practice"
-    Page.LAP_SOUND -> ""
+    Page.LAP_SOUND, Page.SYNC -> ""
 }
 
 /** Whether this page's settings differ between [a] and [b]. */
@@ -355,7 +363,7 @@ private fun Page.changed(a: TimerSettings, b: TimerSettings): Boolean {
         Page.RADIO -> listOf(ble, espnow, bindPhrase)
         Page.MESSAGES -> listOf(msgEvent, event, msgHeat, heatPrefix, nextHeat, msgStart, textStage, textGo, textFinish, msgLaps, msgBest)
         Page.RACE -> listOf(raceLaps, raceTimeS, raceLimit, mode, randomHold)
-        Page.LAP_SOUND -> emptyList()
+        Page.LAP_SOUND, Page.SYNC -> emptyList()
     }
     return a.fields() != b.fields()
 }

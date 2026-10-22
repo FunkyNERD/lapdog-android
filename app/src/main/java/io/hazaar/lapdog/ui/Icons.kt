@@ -54,6 +54,9 @@ object Icons {
     private val flag = icon("flag", "M5 21V4", "M5 4h13l-2.5 4.5L18 13H5", "M9.5 4v9", "M14 4v9", "M5 8.5h11.5")
     private val speaker = icon("speaker", "M4 9.5h3.5L12 5.5v13l-4.5-4H4z", "M15.5 9a4 4 0 0 1 0 6", "M18.5 6.5a7.5 7.5 0 0 1 0 11")
     private val play = icon("play", "M8 5.5v13l10.5-6.5z")
+    private val cloud = icon(
+        "cloud", "M7 19h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 9.6A4.7 4.7 0 0 0 7 19z", "M12 16.5v-5", "M9.5 14l2.5-2.5 2.5 2.5",
+    )
     private val alert = icon("alert", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z", "M12 8v5", "M12 16h.01")
 
     @Composable
@@ -74,5 +77,6 @@ object Icons {
     @Composable fun Flag(tint: Color, size: Dp = 22.dp) = Draw(flag, tint, size)
     @Composable fun Speaker(tint: Color, size: Dp = 22.dp) = Draw(speaker, tint, size)
     @Composable fun Play(tint: Color, size: Dp = 20.dp) = Draw(play, tint, size)
+    @Composable fun Cloud(tint: Color, size: Dp = 22.dp) = Draw(cloud, tint, size)
     @Composable fun Back(tint: Color, size: Dp = 24.dp) = Draw(back, tint, size)
 }

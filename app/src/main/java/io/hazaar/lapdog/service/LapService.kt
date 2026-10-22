@@ -19,6 +19,7 @@ import io.hazaar.lapdog.transport.BleTransport
 import io.hazaar.lapdog.transport.Transport
 import io.hazaar.lapdog.transport.UsbTransport
 import io.hazaar.lapdog.state.TimerState
+import io.hazaar.lapdog.sync.WebSync
 import io.hazaar.lapdog.ui.MainActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
@@ -42,6 +43,7 @@ class LapService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         HeatStore.init(applicationContext)
         LapSounds.init(applicationContext)
+        WebSync.init(applicationContext)
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID, notification(null),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,

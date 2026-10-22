@@ -6,6 +6,7 @@ import io.hazaar.lapdog.protocol.TimerLine
 import io.hazaar.lapdog.state.TimerModel
 import io.hazaar.lapdog.state.TimerState
 import io.hazaar.lapdog.state.Via
+import io.hazaar.lapdog.sync.WebSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -74,7 +75,10 @@ object LapRepository {
     /** New state out, finished heats saved. */
     private fun publish() {
         _state.value = model.state
-        model.takeFinished().forEach(HeatStore::save)
+        model.takeFinished().forEach {
+            HeatStore.save(it)
+            WebSync.onHeatFinished(it)
+        }
     }
 
     fun onLine(line: TimerLine) {

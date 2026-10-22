@@ -3,6 +3,7 @@ package io.hazaar.lapdog.service
 import android.content.Context
 import android.util.Log
 import io.hazaar.lapdog.state.HeatRecord
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +29,8 @@ object HeatStore {
     private val _heats = MutableStateFlow<List<HeatRecord>>(emptyList())
     val heats: StateFlow<List<HeatRecord>> = _heats
 
+    private val loaded = CompletableDeferred<Unit>()
+
     @Synchronized
     fun init(context: Context) {
         if (dir != null) return
@@ -40,7 +43,14 @@ object HeatStore {
             }
             // Heats saved before the load finished are already in the list.
             _heats.update { (it + loaded).distinctBy { h -> h.id }.sortedByDescending { h -> h.startedAt } }
+            this@HeatStore.loaded.complete(Unit)
         }
+    }
+
+    /** Every heat, once the saved ones are loaded ([init] first). */
+    suspend fun all(): List<HeatRecord> {
+        loaded.await()
+        return _heats.value
     }
 
     fun save(h: HeatRecord) {

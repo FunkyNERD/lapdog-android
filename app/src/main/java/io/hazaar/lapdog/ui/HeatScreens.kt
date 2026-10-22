@@ -65,11 +65,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hazaar.lapdog.protocol.Format
 import io.hazaar.lapdog.state.HeatRecord
 import io.hazaar.lapdog.state.LapEntry
 import io.hazaar.lapdog.state.PersonalBests
 import io.hazaar.lapdog.state.groupByDay
+import io.hazaar.lapdog.sync.WebSync
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.body
 import io.hazaar.lapdog.ui.theme.heading
@@ -90,6 +92,32 @@ private fun BackButton(description: String, onBack: () -> Unit) {
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) { Icons.Back(Hud.text, 22.dp) }
+}
+
+/** Sync now, on the history header while paired with the website; shows what's waiting. */
+@Composable
+private fun SyncButton(heats: List<HeatRecord>) {
+    val s by WebSync.state.collectAsStateWithLifecycle()
+    val status by WebSync.status.collectAsStateWithLifecycle()
+    if (!s.paired) return
+    val waiting = remember(heats, s) { WebSync.pending(heats, s).size }
+    val label = when {
+        status.running -> "Syncing…"
+        waiting > 0 -> "Sync $waiting"
+        else -> "Synced"
+    }
+    Row(
+        Modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(Hud.surface)
+            .border(1.dp, Hud.line, RoundedCornerShape(12.dp))
+            .clickable(enabled = !status.running, role = Role.Button, onClick = WebSync::syncNow)
+            .semantics { contentDescription = if (waiting > 0) "Sync now, $waiting heats waiting" else "Sync now" }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icons.Cloud(if (status.error) Hud.slow else if (waiting > 0) Hud.accent else Hud.muted, 18.dp)
+        Text(label, style = body(14.sp, if (waiting > 0) Hud.text else Hud.muted, FontWeight.Medium))
+    }
 }
 
 /** PRACTICE / RACE tag. */
@@ -121,7 +149,8 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
         item {
             Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
                 BackButton("Back to timer", onBack)
-                Text("Heats", style = heading(24.sp, spacing = 0.sp), modifier = Modifier.semantics { heading() })
+                Text("Heats", style = heading(24.sp, spacing = 0.sp), modifier = Modifier.weight(1f).semantics { heading() })
+                SyncButton(heats)
             }
         }
         item {
