@@ -1,6 +1,28 @@
 package io.hazaar.lapdog.ui
 
 import android.text.format.DateUtils
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import io.hazaar.lapdog.ui.theme.mono
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,14 +86,68 @@ fun SyncPage() {
 @Composable
 private fun PairForm(busy: Boolean) {
     var code by rememberSaveable { mutableStateOf("") }
-    val valid = normaliseCode(code).length == 6
+    val valid = code.length == 6
     Text(
         "Upload your heats to your account on the LapDog website, the same way a LapDog LCD dashboard does. " +
             "On ${WebApi.BASE_URL.removePrefix("https://")}, sign in, open Devices and choose Pair a device, then enter the code it shows.",
         style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
     )
-    HudField("Pairing code", code, { code = it }, monoText = true, maxLength = 7, enabled = !busy)
-    PrimaryButton("PAIR", { WebSync.pair(normaliseCode(code)) }, height = 56.dp, size = 18, enabled = valid && !busy)
+    PairCodeField(code, { code = it }, enabled = !busy) { if (!busy) WebSync.pair(code) }
+    PrimaryButton("PAIR", { WebSync.pair(code) }, height = 56.dp, size = 18, enabled = valid && !busy)
+}
+
+/**
+ * The pairing code as the website shows it: six character boxes with a dash after the
+ * third. One hidden text field underneath, so typing, backspace and pasting a whole code
+ * (with or without the dash, any case) all work; [code] only ever holds valid characters.
+ */
+@Composable
+private fun PairCodeField(code: String, onChange: (String) -> Unit, enabled: Boolean, onDone: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    BasicTextField(
+        value = code,
+        onValueChange = { onChange(normaliseCode(it).take(6)) },
+        enabled = enabled,
+        singleLine = true,
+        cursorBrush = SolidColor(Color.Transparent),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.Characters,
+            autoCorrectEnabled = false,
+            keyboardType = KeyboardType.Ascii,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { if (normaliseCode(code).length == 6) onDone() }),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }
+            .semantics { contentDescription = "Pairing code" },
+        decorationBox = { _ ->
+            // 44 x 58 boxes like the website's phone layout, narrower on a small screen.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val w = minOf(44.dp, (maxWidth - 24.dp - 6.dp * 6) / 6)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (i in 0 until 6) {
+                        if (i == 3) Box(Modifier.padding(horizontal = 2.dp).size(14.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(Hud.muted))
+                        // The box the next character goes in is outlined while typing.
+                        val active = focused && enabled && i == code.length.coerceAtMost(5)
+                        Box(
+                            Modifier.size(w, w * 58 / 44).clip(RoundedCornerShape(8.dp)).background(Hud.panel)
+                                .border(1.dp, if (active) Hud.accent else Hud.grid, RoundedCornerShape(8.dp))
+                                .drawBehind {
+                                    val h = 3.dp.toPx()
+                                    drawRect(Hud.accent.copy(alpha = 0.6f), Offset(0f, size.height - h), Size(size.width, h))
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(code.getOrNull(i)?.toString() ?: "", style = mono(30.sp, Hud.text, FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable
