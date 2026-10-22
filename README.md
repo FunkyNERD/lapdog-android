@@ -38,6 +38,8 @@ It keeps the key in `~/.config/lapdog-android/`. **Back that folder up.** Every 
 
 **Website sync** (Settings > Website sync) uploads finished heats to the pilot's account on lapdog.funkynerd.com with the same device API LapDog LCD uses (lapdog-web `docs/dev/device-api.md`). Pair with a code from the website's Devices page. Then every heat with at least one lap, practice or race, goes up as a race: after each heat ("Sync after each heat", on by default, via WorkManager so it waits for a network and retries), or with **Sync now** there or on the Heats screen. Race numbers come from the website's `counters` (shared with the pilot's LCD dashboards, and pushed past every number used), not the phone's heat ids. They're kept per heat in `files/sync.json`, so a retry reuses its number.
 
+**Update notification:** once a day (and on opening the app, at most every 6 hours) the app asks the website's `/app/latest.json` for the latest release. If it's newer, it posts a notification (once per version) and shows a banner on the timer screen until it's dismissed. Either one opens the APK download on the website, and Android's installer takes it from there.
+
 ## Layout
 
 | Path | What |
@@ -50,6 +52,7 @@ It keeps the key in `~/.config/lapdog-android/`. **Back that folder up.** Every 
 | `transport/BleTransport.kt` | One long-running scan, `ScanFilter` on manufacturer ID 0xFFFF, low latency |
 | `service/` | Foreground service running both transports; `LapRepository` state + command queue; `LapSounds` (lap sound choice + SoundPool) |
 | `sync/` | Website sync: `WebApi` (device API over HTTPS), `RaceUpload` (heat → race body), `SyncState` (pairing + numbering, `files/sync.json`), `WebSync` + `SyncWorker` |
+| `update/` | `AppUpdates` (version check, banner state, notification) + the daily `UpdateWorker` |
 | `ui/` | Theme (bundled Chakra Petch / IBM Plex Sans / JetBrains Mono, OFL in `fonts-licenses/`) and screens |
 
 ESP-NOW can't be received on Android directly. Use LapDog LCD or another ESP32 as a USB bridge if needed.

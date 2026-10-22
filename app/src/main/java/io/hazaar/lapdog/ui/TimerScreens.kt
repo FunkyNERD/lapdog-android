@@ -28,6 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import io.hazaar.lapdog.update.AppUpdates
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -96,6 +100,32 @@ sealed interface ArmChoice {
         }
 }
 
+/** A newer app on the website: tap to download it, × to hide it until the next version. */
+@Composable
+private fun UpdateBanner() {
+    val r by AppUpdates.available.collectAsStateWithLifecycle()
+    val release = r ?: return
+    val context = LocalContext.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Hud.selected)
+            .border(1.dp, Hud.accentDim, RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button) { AppUpdates.open(context, release) }
+            .padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("LapDog ${release.version} is available", style = body(15.sp, Hud.selectedText, FontWeight.SemiBold))
+            Text("Tap to download and install the update", style = body(13.sp, Hud.muted))
+        }
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable { AppUpdates.dismiss(release) }
+                .semantics { contentDescription = "Hide the update" },
+            contentAlignment = Alignment.Center,
+        ) { Icons.Cross(Hud.muted) }
+    }
+}
+
 @Composable
 fun IdleScreen(
     state: TimerState,
@@ -133,6 +163,7 @@ fun IdleScreen(
                 contentAlignment = Alignment.Center,
             ) { Icons.Gear(Hud.textSoft) }
         }
+        UpdateBanner()
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (state.event.isNotEmpty()) SectionLabel(state.event)
