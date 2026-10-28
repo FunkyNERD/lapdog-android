@@ -1,6 +1,6 @@
 # Devplan: update a timer's firmware from the app over USB
 
-Tracks [lapdog-android#3](https://git.hazaar.io/jamie/lapdog-android/issues/3). Today a timer is
+Tracks [lapdog-android#3](https://git.hazaar.dev/jamie/lapdog-android/issues/3). Today a timer is
 updated with the website's browser flasher, which needs a computer running Chrome or Edge. The app
 already talks to the timer over USB, so it can write the new firmware itself, using the same
 serial bootloader protocol as esptool.

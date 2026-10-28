@@ -19,7 +19,7 @@ DIR="${LAPDOG_KEY_DIR:-$HOME/.config/lapdog-android}"
 KEYSTORE="$DIR/release.jks"
 PASSFILE="$DIR/keystore-password"
 REPO="${FORGEJO_REPO:-jamie/lapdog-android}"
-FORGEJO_URL="${FORGEJO_URL:-https://git.hazaar.io}"
+FORGEJO_URL="${FORGEJO_URL:-https://git.hazaar.dev}"
 
 mkdir -p "$DIR"
 chmod 700 "$DIR"
