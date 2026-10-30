@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's own screens are Compose; this is only what shows before the first frame. -->
+    <style name="Theme.LapDog" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lapdog_bg</item>
+    </style>
+</resources>

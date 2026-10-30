@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
                 var history by rememberSaveable { mutableStateOf(false) }
                 var heatId by rememberSaveable { mutableStateOf<Long?>(null) }
                 var message by remember { mutableStateOf<String?>(null) }
+                var splash by rememberSaveable { mutableStateOf(true) }
                 val scope = rememberCoroutineScope()
 
                 fun command(vararg c: String) {
@@ -120,6 +121,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                if (splash) Splash(onDone = { splash = false })
             }
         }
     }
