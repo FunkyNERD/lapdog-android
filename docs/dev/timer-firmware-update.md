@@ -212,7 +212,7 @@ running on its battery.
 
 ## Phase 1: firmware (lapdog-firmware)
 
-- `get` adds `S:board=c5-mini|c5-touch|c3-oled`, the device ids from `devices.json`. Set it in
+- `get` adds `S:board=c5-mini|c5-touch|c5-lcd147|c3-oled`, the device ids from `devices.json`. Set it in
   `include/config.h` from the build env flags (`LAPDOG_TOUCH`, `LAPDOG_OLED`, otherwise the mini).
 - New console command `bootloader`, accepted only while idle: reply `OK`, flush stdout, set
   `FORCE_DOWNLOAD_BOOT`, then `esp_restart()`. Document it in `src/console.h`.
