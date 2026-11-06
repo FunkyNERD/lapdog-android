@@ -45,7 +45,12 @@ data class HeatRecord(
     val finished: Boolean = false,
     val ignored: Ignored = Ignored(),
     val passes: List<IgnoredPass> = emptyList(),
+    /** The laps and passes as the timer timed them, kept on the first edit (LapEdits) so it can be undone. */
+    val originalLaps: List<LapEntry>? = null,
+    val originalPasses: List<IgnoredPass>? = null,
 ) {
+    /** The pilot split or merged laps. */
+    val edited get() = originalLaps != null
     val name get() = if (prefix.isEmpty()) "$heat" else "$prefix $heat"
     val stats get() = LapStats(laps)
     val isRace get() = mode == Mode.RACE

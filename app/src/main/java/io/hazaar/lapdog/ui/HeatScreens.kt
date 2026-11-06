@@ -6,7 +6,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +74,10 @@ import io.hazaar.lapdog.state.LapEntry
 import io.hazaar.lapdog.state.PersonalBests
 import io.hazaar.lapdog.state.groupByDay
 import io.hazaar.lapdog.sync.WebSync
+import io.hazaar.lapdog.service.HeatStore
+import io.hazaar.lapdog.state.LapEdits
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.body
 import io.hazaar.lapdog.ui.theme.heading
@@ -254,6 +260,14 @@ fun HeatScreen(h: HeatRecord, pb: PersonalBests, onBack: () -> Unit) {
     val st = h.stats
     var selected by rememberSaveable(h.id) { mutableStateOf<Int?>(null) } // index into h.laps
     val pick = { i: Int -> selected = if (selected == i) null else i }
+    var editing by remember(h.id) { mutableStateOf<Int?>(null) } // long-pressed lap, index into h.laps
+    val sync by WebSync.state.collectAsStateWithLifecycle()
+    val uploaded = h.id in sync.uploaded
+    fun save(edited: HeatRecord) {
+        selected = null
+        editing = null
+        HeatStore.save(edited)
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(pagePadding),
@@ -331,11 +345,56 @@ fun HeatScreen(h: HeatRecord, pb: PersonalBests, onBack: () -> Unit) {
                     Text("Time", style = body(12.sp, Hud.muted), modifier = Modifier.width(92.dp), textAlign = TextAlign.End)
                     Text("Gap", style = body(12.sp, Hud.muted), modifier = Modifier.width(72.dp), textAlign = TextAlign.End)
                 }
-                LapRows(h, selected, pick, text)
+                LapRows(h, selected, pick, { editing = it }, text)
+                if (h.laps.isNotEmpty()) {
+                    Text(
+                        "Long-press a lap to split it (a missed pass) or merge it with a neighbour (a false read).",
+                        style = body(12.sp, Hud.muted).copy(lineHeight = 17.sp),
+                        modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp),
+                    )
+                }
+                if (h.edited) {
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "Laps edited on this phone" + if (uploaded) " · the website has the original" else "",
+                            style = body(13.sp, Hud.textSoft), modifier = Modifier.weight(1f),
+                        )
+                        SecondaryButton("Restore timer's laps", { save(LapEdits.restore(h)) })
+                    }
+                }
             }
         }
     }
+
+    editing?.takeIf { it in h.laps.indices }?.let { i -> LapEditDialog(h, i, uploaded, onDone = { editing = null }, onEdit = ::save) }
 }
+
+/** What a long-pressed lap can become. */
+@Composable
+private fun LapEditDialog(h: HeatRecord, i: Int, uploaded: Boolean, onDone: () -> Unit, onEdit: (HeatRecord) -> Unit) {
+    val lap = h.laps[i]
+    val num = { n: Int -> "%02d".format(n) }
+    HudDialog("Lap ${num(lap.lap)} · ${lapText(lap)}", onDismiss = onDone) {
+        Text("Split it if a pass was missed; merge it if the pass at one end was a false read. The heat's total time stays the same.",
+            style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp))
+        val half = Format.lap(lap.ms / 2)
+        PrimaryButton("SPLIT INTO 2 · ≈$half", { onEdit(LapEdits.split(h, i, 2)) }, height = 56.dp, size = 16)
+        SecondaryButton("Split into 3 · ≈${Format.lap(lap.ms / 3)}", { onEdit(LapEdits.split(h, i, 3)) }, Modifier.fillMaxWidth())
+        if (LapEdits.canMergePrevious(h, i)) {
+            val prev = h.laps[i - 1]
+            SecondaryButton("Merge with lap ${num(prev.lap)} · ${Format.lap(prev.ms + lap.ms)}", { onEdit(LapEdits.mergeWithPrevious(h, i)) }, Modifier.fillMaxWidth())
+        }
+        if (LapEdits.canMergeNext(h, i)) {
+            val next = h.laps[i + 1]
+            SecondaryButton("Merge with lap ${num(next.lap)} · ${Format.lap(lap.ms + next.ms)}", { onEdit(LapEdits.mergeWithNext(h, i)) }, Modifier.fillMaxWidth())
+        }
+        if (uploaded) Text("Already uploaded: the website keeps the laps it has.", style = body(13.sp, Hud.muted))
+        SecondaryButton("Cancel", onDone, Modifier.fillMaxWidth())
+    }
+}
+
+/** A lap's time; "≈" when it's an equal share of a split lap. */
+private fun lapText(l: LapEntry) = (if (l.split) "≈" else "") + Format.lap(l.ms)
 
 private data class Tile(val label: String, val value: String, val note: String)
 
@@ -386,7 +445,9 @@ private fun StatGrid(tiles: List<Tile>) {
 }
 
 @Composable
-private fun LapRows(h: HeatRecord, selected: Int?, pick: (Int) -> Unit, text: HeatText) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun LapRows(h: HeatRecord, selected: Int?, pick: (Int) -> Unit, edit: (Int) -> Unit, text: HeatText) {
+    val haptic = LocalHapticFeedback.current
     val st = h.stats
     val best = st.best
     val slowest = st.slowest.takeIf { !h.isRace && st.count > 1 }
@@ -407,7 +468,12 @@ private fun LapRows(h: HeatRecord, selected: Int?, pick: (Int) -> Unit, text: He
                 .background(when { isBest -> Hud.bestTint; sel -> Hud.selected; else -> Hud.surface })
                 .drawBehind { drawRect(edge, size = Size(3.dp.toPx(), size.height)) }
                 .then(if (isBest && sel) Modifier.border(1.dp, Hud.accent, shape) else Modifier)
-                .clickable(role = Role.Button) { pick(i) }
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = { pick(i) },
+                    onLongClickLabel = "Split or merge this lap",
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); edit(i) },
+                )
                 .semantics { this.selected = sel }
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -424,7 +490,7 @@ private fun LapRows(h: HeatRecord, selected: Int?, pick: (Int) -> Unit, text: He
                     )
                 }
             }
-            Text(Format.lap(lap.ms), style = mono(16.sp, if (isBest) Hud.best else Hud.text), modifier = Modifier.width(92.dp), textAlign = TextAlign.End)
+            Text(lapText(lap), style = mono(16.sp, if (isBest) Hud.best else if (lap.split) Hud.textSoft else Hud.text), modifier = Modifier.width(92.dp), textAlign = TextAlign.End)
             Text(
                 if (isBest || best == null) "—" else Format.delta(lap.ms - best.ms),
                 style = mono(13.sp, if (isSlowest) Hud.slow else Hud.muted, FontWeight.Medium),

@@ -4,14 +4,18 @@ import kotlinx.serialization.Serializable
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
-/** One completed lap. Lap numbers can have gaps if BLE missed a burst. */
+/**
+ * One completed lap. Lap numbers can have gaps if BLE missed a burst. [split]: the
+ * pilot split a lap the timer timed as one (a missed pass) into equal parts, so its
+ * time is an estimate; it never counts as a best.
+ */
 @Serializable
-data class LapEntry(val lap: Int, val ms: Long)
+data class LapEntry(val lap: Int, val ms: Long, val split: Boolean = false)
 
 /** Numbers the lap screens show, computed from a heat's laps. */
 data class LapStats(val laps: List<LapEntry>) {
     val count get() = laps.size
-    val best: LapEntry? get() = laps.minByOrNull { it.ms }
+    val best: LapEntry? get() = laps.filter { !it.split }.minByOrNull { it.ms }
     val last: LapEntry? get() = laps.lastOrNull()
     val totalMs: Long get() = laps.sumOf { it.ms }
     val averageMs: Long? get() = if (laps.isEmpty()) null else laps.sumOf { it.ms } / laps.size
@@ -21,7 +25,7 @@ data class LapStats(val laps: List<LapEntry>) {
 
     /** Fastest three laps in a row (consecutive lap numbers), RotorHazard style. */
     val bestThree: List<LapEntry>? get() = laps.windowed(3)
-        .filter { it[2].lap - it[0].lap == 2 }
+        .filter { it[2].lap - it[0].lap == 2 && it.none { l -> l.split } }
         .minByOrNull { w -> w.sumOf { it.ms } }
 
     val bestThreeMs: Long? get() = bestThree?.sumOf { it.ms }
