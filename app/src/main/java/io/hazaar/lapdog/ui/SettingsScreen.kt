@@ -84,18 +84,19 @@ private const val GRAPH_MAX_DB = 32f
 private const val GRAPH_MAX_CAL_DB = 48f // from the receiver floor: passes ~30-40 dB over it
 
 /** One page per category; the list is the screen's home. [phone]: kept on this phone, not the timer. */
-private enum class Page(val title: String, val phone: Boolean = false) {
+private enum class Page(val title: String, val phone: Boolean = false, val listed: Boolean = true) {
     CHANNEL("Channel & detection"),
     FALSE_READ("False-read protection"),
     RADIO("Radio output"),
     MESSAGES("Race messages"),
     RACE("Race defaults"),
-    FIRMWARE("Timer firmware"),
+    /** Opened from the connection card, not listed. */
+    FIRMWARE("Timer", listed = false),
     LAP_SOUND("Lap sound", phone = true),
     SYNC("Website sync", phone = true),
 }
 
-private val timerPages = Page.entries.filter { !it.phone }
+private val timerPages = Page.entries.filter { !it.phone && it.listed }
 
 /** The category's icon tile: blue for timer settings, purple for this phone's. */
 @Composable
@@ -283,7 +284,7 @@ private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSetti
     val sound by LapSounds.sound.collectAsStateWithLifecycle()
     val sync by WebSync.state.collectAsStateWithLifecycle()
     val heats by HeatStore.heats.collectAsStateWithLifecycle()
-    ConnectionCard(state)
+    ConnectionCard(state) { onOpen(Page.FIRMWARE) }
     Group("Timer", "Saved on the timer") {
         timerPages.forEachIndexed { i, p ->
             CategoryRow(
@@ -433,9 +434,12 @@ private fun LapSoundPage() {
 }
 
 @Composable
-private fun ConnectionCard(state: TimerState) {
+private fun ConnectionCard(state: TimerState, onOpen: () -> Unit) {
     val s = state.settings
-    HudCard(radius = 14.dp, padding = 14.dp) {
+    HudCard(
+        Modifier.clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClickLabel = "Timer firmware and updates", onClick = onOpen),
+        radius = 14.dp, padding = 14.dp,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             IconTile(if (state.usbConnected) Hud.ok else Hud.muted, if (state.usbConnected) Hud.okTint else Hud.bg) { tint, s -> Icons.Usb(tint, s) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -448,12 +452,13 @@ private fun ConnectionCard(state: TimerState) {
                         !state.usbConnected -> "Plug the timer in over USB to read and change its settings"
                         s == null -> "Reading settings…"
                         state.armed -> "Firmware ${s.firmware} · armed — disarm to change settings"
-                        else -> "Firmware ${s.firmware} · idle — settings can be changed"
+                        else -> "Firmware ${s.firmware} · idle — tap for firmware and updates"
                     },
                     style = body(13.sp, Hud.muted),
                 )
             }
             Dot(if (state.usbConnected) Hud.ok else Hud.toggleOff, 10.dp, ring = if (state.usbConnected) Hud.okTint else null)
+            Icons.Forward(Hud.muted)
         }
     }
 }
