@@ -1,5 +1,6 @@
 package io.hazaar.lapdog.state
 
+import io.hazaar.lapdog.protocol.Calibration
 import io.hazaar.lapdog.protocol.Format
 import io.hazaar.lapdog.protocol.LapFrame
 import io.hazaar.lapdog.protocol.LapFrame.Mode
@@ -76,6 +77,8 @@ data class TimerState(
     val osdVia: Via? = null,
     val lastHeardAt: Long? = null,
     val lastHeardVia: Via? = null,
+    /** The timer's receiver calibration, from its `S:cal...` lines (USB). */
+    val calibration: Calibration = Calibration(),
 ) {
     val armed get() = session != null && session.stage != Stage.IDLE
     val event get() = settings?.event ?: heardEvent ?: ""
@@ -109,10 +112,23 @@ class TimerModel(private val wallClock: () -> Long = System::currentTimeMillis) 
     fun takeFinished(): List<HeatRecord> = finished.toList().also { finished.clear() }
 
     fun onUsb(connected: Boolean) {
-        state = if (connected) state.copy(usbConnected = true) else state.copy(usbConnected = false, settings = null)
+        state = if (connected) state.copy(usbConnected = true)
+        else state.copy(usbConnected = false, settings = null, calibration = Calibration())
     }
 
+    private val calEvents = mutableListOf<Calibration.Event>()
+
+    /** Calibration events completed since the last call, oldest first. */
+    fun takeCalEvents(): List<Calibration.Event> = calEvents.toList().also { calEvents.clear() }
+
     fun onSetting(key: String, value: String) {
+        if (Calibration.isCalKey(key)) {
+            val (c, e) = state.calibration.with(key, value)
+            state = state.copy(calibration = c)
+            e?.let(calEvents::add)
+            return
+        }
+        state = state.copy(calibration = state.calibration.withSetting(key, value))
         val s = (state.settings ?: TimerSettings()).with(key, value)
         state = state.copy(settings = s)
         // Connected mid-session or after a reboot: trust the timer's own idea of armed.

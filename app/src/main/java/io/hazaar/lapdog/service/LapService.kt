@@ -32,8 +32,8 @@ import kotlinx.coroutines.launch
  * Foreground service so laps keep arriving with goggles on and the phone screen off.
  * Runs every transport at once; TimerModel drops the copies that arrive over both.
  *
- * It runs while the app is on screen or the timer is armed: leave the app while
- * disarmed and it stops, notification and all. The app has to be open to hear the
+ * It runs while the app is on screen, the timer is armed, or a calibration is being
+ * talked through: leave the app while none of those and it stops, notification and all. The app has to be open to hear the
  * timer arm (Android 12+ won't let the service start from the background).
  */
 class LapService : LifecycleService() {
@@ -43,6 +43,7 @@ class LapService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         HeatStore.init(applicationContext)
         LapSounds.init(applicationContext)
+        Voice.init(applicationContext)
         WebSync.init(applicationContext)
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID, notification(null),
@@ -55,8 +56,10 @@ class LapService : LifecycleService() {
                     .collect { nm.notify(NOTIFICATION_ID, notification(it)) }
             }
             jobs += lifecycleScope.launch {
-                combine(LapRepository.appVisible, LapRepository.state) { visible, s -> visible || s.armed }
-                    .first { !it }
+                // A guided calibration runs with the screen off and the timer idle: stay up for it.
+                combine(LapRepository.appVisible, LapRepository.state, CalibrationGuide.active) { visible, s, guiding ->
+                    visible || s.armed || guiding
+                }.first { !it }
                 ServiceCompat.stopForeground(this@LapService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }

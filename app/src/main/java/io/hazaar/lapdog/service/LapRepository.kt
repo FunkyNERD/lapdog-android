@@ -79,6 +79,7 @@ object LapRepository {
             HeatStore.save(it)
             WebSync.onHeatFinished(it)
         }
+        model.takeCalEvents().forEach(CalibrationGuide::onEvent)
     }
 
     fun onLine(line: TimerLine) {

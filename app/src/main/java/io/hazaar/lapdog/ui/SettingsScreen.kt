@@ -79,6 +79,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val GRAPH_MAX_DB = 32f
+private const val GRAPH_MAX_CAL_DB = 48f // calibrated: passes ~30-40 dB over the floor
 
 /** One page per category; the list is the screen's home. [phone]: kept on this phone, not the timer. */
 private enum class Page(val title: String, val phone: Boolean = false) {
@@ -194,7 +195,7 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
                     }
                     ReadOnlyNote(state)
                     ChannelSection(draft, editable, edit)
-                    SensitivitySection(draft, editable, edit)
+                    SensitivitySection(state, draft, editable, edit)
                 }
                 Page.FALSE_READ -> {
                     ReadOnlyNote(state)
@@ -282,7 +283,7 @@ private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSetti
         timerPages.forEachIndexed { i, p ->
             CategoryRow(
                 p,
-                d?.let { p.summary(it) } ?: "Not read yet",
+                d?.let { p.summary(it, state.calibration.on) } ?: "Not read yet",
                 edited = d != null && timer != null && p.changed(d, timer),
                 divider = i < timerPages.lastIndex,
             ) { onOpen(p) }
@@ -338,10 +339,14 @@ private fun CategoryRow(p: Page, summary: String, edited: Boolean, divider: Bool
     }
 }
 
-private fun Page.summary(d: TimerSettings): String = when (this) {
+private fun Page.summary(d: TimerSettings, calibrated: Boolean): String = when (this) {
     Page.CHANNEL -> {
-        val sens = if (d.sensitivity == Sensitivity.MED) "Medium" else d.sensitivity.label
-        "${d.channelLabel} · ${d.freqMhz} MHz · $sens sensitivity"
+        val sens = when {
+            calibrated -> "calibrated"
+            d.sensitivity == Sensitivity.MED -> "Medium sensitivity"
+            else -> "${d.sensitivity.label} sensitivity"
+        }
+        "${d.channelLabel} · ${d.freqMhz} MHz · $sens"
     }
     Page.FALSE_READ ->
         "${fmtSeconds(d.minLapMs)} s min lap · " + if (d.ignoreParked) "parked quads ignored" else "parked quads count"
@@ -502,11 +507,14 @@ private fun ChannelSection(d: TimerSettings, enabled: Boolean, onChange: (TimerS
 }
 
 @Composable
-private fun SensitivitySection(d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
+private fun SensitivitySection(state: TimerState, d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
     val rssi by LapRepository.rssi.collectAsStateWithLifecycle()
+    val calibrated = state.calibration.on
     Section("Gate sensitivity") {
+        CalibrationCard(state, enabled)
+        // The presets are for the room-level baseline; a calibrated timer measures from its floor.
         val presets = Sensitivity.entries
-        Segmented(
+        if (!calibrated) Segmented(
             presets.map { it.label to null },
             presets.indexOf(d.sensitivity),
             { i ->
@@ -522,9 +530,12 @@ private fun SensitivitySection(d: TimerSettings, enabled: Boolean, onChange: (Ti
                 Text("Live signal · ${d.channelLabel}", style = body(13.sp, Hud.muted), modifier = Modifier.weight(1f))
                 Text(rssi.maxOrNull()?.let { "peak +${it.roundToInt()} dB" } ?: "no signal yet", style = mono(13.sp, weight = FontWeight.Medium))
             }
-            SignalGraph(rssi, d.enterDb, d.exitDb, enabled) { enter, exit -> onChange(d.copy(enterDb = enter, exitDb = exit)) }
+            SignalGraph(rssi, d.enterDb, d.exitDb, enabled, if (calibrated) GRAPH_MAX_CAL_DB else GRAPH_MAX_DB) { enter, exit ->
+                onChange(d.copy(enterDb = enter, exitDb = exit))
+            }
             Text(
-                "Fly a few passes, then drag the lines: enter just under your peaks, exit a little above the floor.",
+                if (calibrated) "dB above the receiver floor. Calibration set the lines; drag them to fine-tune."
+                else "Fly a few passes, then drag the lines: enter just under your peaks, exit a little above the floor.",
                 style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
             )
         }
@@ -583,7 +594,10 @@ private fun NumberField(label: String, value: String, modifier: Modifier, enable
 }
 
 @Composable
-private fun SignalGraph(samples: List<Float>, enterDb: Float, exitDb: Float, enabled: Boolean, onChange: (Float, Float) -> Unit) {
+private fun SignalGraph(
+    samples: List<Float>, enterDb: Float, exitDb: Float, enabled: Boolean, maxDb: Float,
+    onChange: (Float, Float) -> Unit,
+) {
     var dragging by remember { mutableStateOf<Boolean?>(null) } // true = enter line
     var enter by remember(enterDb) { mutableStateOf(enterDb) }
     var exit by remember(exitDb) { mutableStateOf(exitDb) }
@@ -595,8 +609,8 @@ private fun SignalGraph(samples: List<Float>, enterDb: Float, exitDb: Float, ena
             .background(Hud.bg)
             .semantics { contentDescription = "Live signal with enter line at +${enter.roundToInt()} dB and exit line at +${exit.roundToInt()} dB" }
             .then(
-                if (!enabled) Modifier else Modifier.pointerInput(Unit) {
-                    fun dbAt(y: Float) = ((1 - y / size.height) * GRAPH_MAX_DB).coerceIn(0f, GRAPH_MAX_DB)
+                if (!enabled) Modifier else Modifier.pointerInput(maxDb) {
+                    fun dbAt(y: Float) = ((1 - y / size.height) * maxDb).coerceIn(0f, maxDb)
                     detectVerticalDragGestures(
                         onDragStart = { o -> val db = dbAt(o.y); dragging = abs(db - enter) <= abs(db - exit) },
                         onDragEnd = { dragging = null; onChange(enter, exit) },
@@ -610,7 +624,7 @@ private fun SignalGraph(samples: List<Float>, enterDb: Float, exitDb: Float, ena
             ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            fun y(db: Float) = size.height * (1 - (db / GRAPH_MAX_DB).coerceIn(0f, 1f))
+            fun y(db: Float) = size.height * (1 - (db / maxDb).coerceIn(0f, 1f))
             if (samples.size > 1) {
                 val path = Path()
                 val step = size.width / (200 - 1)
@@ -628,11 +642,11 @@ private fun SignalGraph(samples: List<Float>, enterDb: Float, exitDb: Float, ena
         with(density) {
             Text(
                 "ENTER +${fmtDb(enter)}", style = mono(11.sp, Hud.accent),
-                modifier = Modifier.align(Alignment.TopEnd).padding(end = 6.dp, top = (140.dp * (1 - enter / GRAPH_MAX_DB) - 18.dp).coerceAtLeast(0.dp)),
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = 6.dp, top = (140.dp * (1 - enter / maxDb) - 18.dp).coerceAtLeast(0.dp)),
             )
             Text(
                 "EXIT +${fmtDb(exit)}", style = mono(11.sp, Hud.muted),
-                modifier = Modifier.align(Alignment.TopEnd).padding(end = 6.dp, top = (140.dp * (1 - exit / GRAPH_MAX_DB) - 18.dp).coerceAtLeast(0.dp)),
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = 6.dp, top = (140.dp * (1 - exit / maxDb) - 18.dp).coerceAtLeast(0.dp)),
             )
         }
     }
