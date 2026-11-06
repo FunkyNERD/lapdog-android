@@ -33,10 +33,13 @@ object HeatStore {
 
     private val loaded = CompletableDeferred<Unit>()
 
+    fun init(context: Context) = init(File(context.filesDir, "heats"))
+
+    /** [init] on a folder of heat files (unit tests use a temporary one). */
     @Synchronized
-    fun init(context: Context) {
+    internal fun init(heatsDir: File) {
         if (dir != null) return
-        val d = File(context.filesDir, "heats").apply { mkdirs() }
+        val d = heatsDir.apply { mkdirs() }
         dir = d
         scope.launch {
             val loaded = d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapNotNull { f ->
