@@ -1,8 +1,9 @@
 package io.hazaar.lapdog.flash
 
-import android.content.Context
 import android.os.SystemClock
 import io.hazaar.lapdog.service.LapRepository
+import io.hazaar.lapdog.update.FirmwareRelease
+import io.hazaar.lapdog.update.TimerFirmware
 import io.hazaar.lapdog.transport.UsbTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,8 +22,7 @@ import java.io.File
  * from the lap transport, writes the app image with [EspLoader], resets the timer and
  * waits for it to come back on the new version. Never while armed.
  *
- * For now (the spike) images come from the app's files folder, put there with
- * `adb push <board>-firmware.bin /sdcard/Android/data/io.hazaar.lapdog/files/`.
+ * Images come from the website (TimerFirmware.download, SHA-256 checked).
  */
 object TimerFlasher {
     data class State(
@@ -31,6 +31,8 @@ object TimerFlasher {
         val progress: Float? = null,
         val log: List<String> = emptyList(),
         val ok: Boolean? = null,
+        /** The version being installed. */
+        val target: String? = null,
     )
 
     private val _state = MutableStateFlow(State())
@@ -41,31 +43,34 @@ object TimerFlasher {
     private const val FLASH_SIZE = 4 * 1024 * 1024
     private const val BACK_TIMEOUT_MS = 30_000L
 
-    fun images(context: Context): List<File> =
-        context.getExternalFilesDir(null)?.listFiles { f -> f.isFile && f.name.endsWith(".bin") }
-            ?.sortedBy { it.name }.orEmpty()
-
-    fun start(image: File) {
+    /**
+     * Installs [version] for [board] on the connected timer: downloads its app image from the
+     * website (or uses the copy kept from last time), then writes it. [board] is the timer's
+     * own (S:board) or, for firmware too old to report it, the one the pilot picked.
+     */
+    fun install(board: String, release: FirmwareRelease) {
         if (_state.value.running) return
         val s = LapRepository.state.value
         if (s.armed) return fail("Disarm the timer first.")
-        _state.value = State(running = true, stage = "Starting")
+        val reported = s.settings?.board.orEmpty()
+        if (reported.isNotEmpty() && reported != board) return fail("That's a $board image; this timer is a $reported.")
+        _state.value = State(running = true, stage = "Downloading v${release.version}", target = release.version)
         scope.launch {
             try {
-                run(image)
+                val file = TimerFirmware.download(board, release) { p -> _state.update { it.copy(progress = p) } }
+                log("Downloaded v${release.version} for $board (SHA-256 checked)")
+                run(file, board)
             } catch (e: Exception) {
                 fail(e.message ?: e.javaClass.simpleName)
             }
         }
     }
 
-    private suspend fun run(image: File) {
+    private suspend fun run(image: File, board: String) {
         val bytes = image.readBytes()
-        val board = LapRepository.state.value.settings?.board.orEmpty()
         val from = LapRepository.state.value.settings?.firmware.orEmpty()
-        log("${image.name}: ${bytes.size / 1024} KB, MD5 ${EspLoader.md5Hex(bytes).take(8)}…")
-        log("Timer: ${board.ifEmpty { "board unknown" }}, firmware ${from.ifEmpty { "?" }}")
-        if (board.isNotEmpty() && !image.name.startsWith(board)) return fail("That image isn't for a $board.")
+        log("${bytes.size / 1024} KB, MD5 ${EspLoader.md5Hex(bytes).take(8)}…")
+        log("Timer: $board, firmware ${from.ifEmpty { "?" }}")
         if (bytes.size < 64 * 1024 || bytes[0] != 0xE9.toByte()) return fail("That doesn't look like an ESP32 app image.")
 
         val t0 = SystemClock.elapsedRealtime()
@@ -108,8 +113,11 @@ object TimerFlasher {
         }
         if (back == null) return fail("Written and checked, but the timer didn't come back over USB in ${BACK_TIMEOUT_MS / 1000} s. Unplug it and plug it in again.")
         delay(500)
-        log("Back (${at()}): firmware ${back.settings?.firmware}")
-        _state.update { it.copy(running = false, stage = "Done", progress = null, ok = true) }
+        val now = back.settings?.firmware.orEmpty()
+        log("Back (${at()}): firmware $now")
+        val target = _state.value.target
+        if (target != null && now != target) return fail("The timer came back on $now, not $target.")
+        _state.update { it.copy(running = false, stage = "Updated to v$now", progress = null, ok = true) }
     }
 
     private fun stage(s: String) {

@@ -116,7 +116,7 @@ private fun PageIcon(p: Page, size: androidx.compose.ui.unit.Dp = 40.dp) {
 }
 
 @Composable
-fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
+fun SettingsScreen(state: TimerState, onBack: () -> Unit, startOnTimer: Boolean = false) {
     val timer = state.settings
     val editable = state.usbConnected && timer != null && !state.armed
     val scope = rememberCoroutineScope()
@@ -131,7 +131,7 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
     }
     var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text, isError
     var saving by remember { mutableStateOf(false) }
-    var page by rememberSaveable { mutableStateOf<Page?>(null) }
+    var page by rememberSaveable { mutableStateOf<Page?>(if (startOnTimer) Page.FIRMWARE else null) }
     var askLeave by remember { mutableStateOf(false) }
 
     val commands = timer?.let { draft.commandsFrom(it) }.orEmpty()

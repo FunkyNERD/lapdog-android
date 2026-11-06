@@ -35,6 +35,7 @@ import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapService
 import io.hazaar.lapdog.sync.WebSync
 import io.hazaar.lapdog.update.AppUpdates
+import io.hazaar.lapdog.update.TimerFirmware
 import io.hazaar.lapdog.ui.theme.Hud
 import io.hazaar.lapdog.ui.theme.LapDogTheme
 import kotlinx.coroutines.launch
@@ -71,6 +72,11 @@ class MainActivity : ComponentActivity() {
         LapSounds.init(applicationContext)
         WebSync.init(applicationContext)
         AppUpdates.start(applicationContext)
+        // Debug builds: test timer updates against another website, e.g. a local one through
+        // adb reverse: am start -n io.hazaar.lapdog/.ui.MainActivity --es firmware_base http://localhost:8000
+        TimerFirmware.init(applicationContext)
+        intent?.getStringExtra("firmware_base")?.let { TimerFirmware.setBase(it) }
+        TimerFirmware.start(applicationContext)
         // Listen from the start: USB and BLE both run in the foreground service.
         requestPermissions.launch(neededPermissions())
         setContent {
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
                 val running by LapRepository.running.collectAsStateWithLifecycle()
                 val heats by HeatStore.heats.collectAsStateWithLifecycle()
                 var settings by rememberSaveable { mutableStateOf(false) }
+                var settingsOnTimer by rememberSaveable { mutableStateOf(false) }
                 var history by rememberSaveable { mutableStateOf(false) }
                 var heatId by rememberSaveable { mutableStateOf<Long?>(null) }
                 var message by remember { mutableStateOf<String?>(null) }
@@ -108,7 +115,7 @@ class MainActivity : ComponentActivity() {
                     val session = state.session
                     val openHeat = heatId?.let { id -> heats.firstOrNull { it.id == id } ?: state.lastSession?.takeIf { it.id == id } }
                     when {
-                        settings -> SettingsScreen(state, onBack = { settings = false })
+                        settings -> SettingsScreen(state, onBack = { settings = false; settingsOnTimer = false }, startOnTimer = settingsOnTimer)
                         session != null && state.armed && session.mode == Mode.RACE ->
                             RaceScreen(state, session, message, onRestart = { command("restart") }, onStop = { command("disarm") })
                         session != null && state.armed ->
@@ -126,6 +133,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                TimerUpdatePrompt(state, busy = guiding || flashing.running, onUpdate = { settingsOnTimer = true; settings = true })
                 if (splash) Splash(onDone = { splash = false })
             }
         }
