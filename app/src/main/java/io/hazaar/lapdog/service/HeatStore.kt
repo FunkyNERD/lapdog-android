@@ -5,6 +5,8 @@ import android.util.Log
 import io.hazaar.lapdog.state.HeatRecord
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,23 +70,47 @@ object HeatStore {
 
     fun get(id: Long) = _heats.value.firstOrNull { it.id == id }
 
-    /** Deletes these heats from the phone (their files too). Uploaded copies stay on the website. */
+    /** Heats deleted from the list whose files go once the undo window has passed. */
+    private val pendingDeletes = HashMap<Long, Job>()
+
+    /**
+     * Deletes these heats from the phone. They leave the list now; their files are only
+     * deleted after [UNDO_MS], so [restore] can put them back, and a heat whose app is killed
+     * in between is still there next time. Uploaded copies stay on the website.
+     */
+    @Synchronized
     fun delete(ids: Collection<Long>) {
         if (ids.isEmpty()) return
         val gone = ids.toSet()
         _heats.update { list -> list.filter { it.id !in gone } }
         val d = dir ?: return
-        scope.launch {
-            gone.forEach { id ->
-                if (!File(d, "$id.json").delete() && File(d, "$id.json").exists()) Log.w(TAG, "couldn't delete heat $id")
+        val job = scope.launch {
+            delay(UNDO_MS)
+            val me = coroutineContext[Job]
+            synchronized(this@HeatStore) {
+                gone.forEach { id ->
+                    // Restored (undo) or deleted again since: not this job's to delete.
+                    if (pendingDeletes[id] !== me) return@forEach
+                    pendingDeletes.remove(id)
+                    val f = File(d, "$id.json")
+                    if (!f.delete() && f.exists()) Log.w(TAG, "couldn't delete heat $id")
+                }
             }
         }
+        gone.forEach { pendingDeletes[it] = job }
     }
 
     fun delete(id: Long) = delete(listOf(id))
 
-    /** Puts deleted heats back (undo): saved again as they were. */
-    fun restore(heats: Collection<HeatRecord>) = heats.forEach(::save)
+    /** Undo: puts deleted heats back, before their files go. */
+    @Synchronized
+    fun restore(heats: Collection<HeatRecord>) {
+        heats.forEach { pendingDeletes.remove(it.id) } // the pending job skips ids no longer listed
+        _heats.update { list -> (list + heats).distinctBy { it.id }.sortedByDescending { it.startedAt } }
+    }
+
+    /** How long a deleted heat can be put back (the list's undo bar shows as long). */
+    const val UNDO_MS = 5_000L
 
     private const val TAG = "HeatStore"
 }

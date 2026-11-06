@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -164,10 +166,14 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
     val days = remember(shown) { groupByDay(shown, zone) }
     // Deleted heats can be put back for a few seconds (a swipe is easy to do by accident).
     var undo by remember { mutableStateOf<List<HeatRecord>?>(null) }
+    // Bumped on every undo: a restored heat gets a fresh swipe state. The list keeps a deleted
+    // row's composition for its fade-out, and reusing it would bring the heat back still
+    // swiped off-screen (an empty gap).
+    var restored by remember { mutableIntStateOf(0) }
     var askDeleteAll by remember { mutableStateOf(false) }
     LaunchedEffect(undo) {
         if (undo != null) {
-            delay(UNDO_MS)
+            delay(HeatStore.UNDO_MS)
             undo = null
         }
     }
@@ -249,8 +255,10 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
                 }
             }
             items(day.heats, key = { it.id }) { h ->
-                SwipeToDelete(onDelete = { delete(listOf(h)) }, modifier = Modifier.animateItem()) {
-                    HeatRow(h, text, pb.isBestLap(h)) { onOpen(h) }
+                key(restored) {
+                    SwipeToDelete(onDelete = { delete(listOf(h)) }, modifier = Modifier.animateItem()) {
+                        HeatRow(h, text, pb.isBestLap(h)) { onOpen(h) }
+                    }
                 }
             }
         }
@@ -261,6 +269,7 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
             if (gone.size == 1) "${gone[0].name} deleted" else "${gone.size} heats deleted",
             Modifier.align(Alignment.BottomCenter),
         ) {
+            restored++
             HeatStore.restore(gone)
             undo = null
         }
@@ -280,8 +289,6 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
     }
 }
 
-private const val UNDO_MS = 5_000L
-
 private fun deleteAllLabel(filter: Int) = when (filter) {
     1 -> "Delete all practice"
     2 -> "Delete all race"
@@ -290,19 +297,21 @@ private fun deleteAllLabel(filter: Int) = when (filter) {
 
 /**
  * Swipe a heat left to delete it: a red "Delete" strip with a bin shows under the row as
- * it's dragged, past 40 % the row slides away and the list closes up ([onDelete]); short of
- * it, it springs back. TalkBack gets a "Delete heat" action instead.
+ * it's dragged. Let go past half way (or fling it) and the row carries on all the way off
+ * to the left; only once it's gone is the heat deleted ([onDelete]) and the list closes up.
+ * Short of it, it springs back. TalkBack gets a "Delete heat" action instead.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeToDelete(onDelete: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { v ->
-            if (v == SwipeToDismissBoxValue.EndToStart) onDelete()
-            v == SwipeToDismissBoxValue.EndToStart
-        },
-        positionalThreshold = { it * 0.4f },
+        confirmValueChange = { it != SwipeToDismissBoxValue.StartToEnd },
+        positionalThreshold = { it * 0.5f },
     )
+    // currentValue changes once the slide off-screen has finished.
+    LaunchedEffect(state.currentValue) {
+        if (state.currentValue == SwipeToDismissBoxValue.EndToStart) onDelete()
+    }
     SwipeToDismissBox(
         state = state,
         modifier = modifier.semantics {
