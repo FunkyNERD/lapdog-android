@@ -37,6 +37,8 @@ data class TimerSettings(
     val raceTimeS: Int = 120,
     val randomHold: Boolean = true,
     val firmware: String = "",
+    /** The timer's board ("c5-mini", "c5-touch", ...), from firmware that reports it. */
+    val board: String = "",
     /** "idle", "practice" or "race" when read. */
     val state: String = "idle",
 ) {
@@ -128,6 +130,7 @@ data class TimerSettings(
         "race.time" -> v.toIntOrNull()?.let { copy(raceTimeS = it) } ?: this
         "race.hold" -> copy(randomHold = v == "on")
         "fw" -> copy(firmware = v)
+        "board" -> copy(board = v)
         "state" -> copy(state = v)
         else -> this
     }

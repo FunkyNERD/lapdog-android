@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.state.PersonalBests
+import io.hazaar.lapdog.flash.TimerFlasher
 import io.hazaar.lapdog.service.CalibrationGuide
 import io.hazaar.lapdog.service.HeatStore
 import io.hazaar.lapdog.service.LapSounds
@@ -95,7 +96,8 @@ class MainActivity : ComponentActivity() {
                 // Armed, the phone is propped up by the gate: don't let the screen time out.
                 // Same while a calibration talks the pilot through (screen off, MIUI throttled it).
                 val guiding by CalibrationGuide.active.collectAsStateWithLifecycle()
-                KeepScreenOn(state.armed || guiding)
+                val flashing by TimerFlasher.state.collectAsStateWithLifecycle()
+                KeepScreenOn(state.armed || guiding || flashing.running)
 
                 // Arming takes over the screen; afterwards it's back to the timer, not old history.
                 LaunchedEffect(state.armed) {

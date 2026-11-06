@@ -90,6 +90,7 @@ private enum class Page(val title: String, val phone: Boolean = false) {
     RADIO("Radio output"),
     MESSAGES("Race messages"),
     RACE("Race defaults"),
+    FIRMWARE("Timer firmware"),
     LAP_SOUND("Lap sound", phone = true),
     SYNC("Website sync", phone = true),
 }
@@ -106,6 +107,7 @@ private fun PageIcon(p: Page, size: androidx.compose.ui.unit.Dp = 40.dp) {
             Page.RADIO -> Icons.Broadcast(tint, s)
             Page.MESSAGES -> Icons.Message(tint, s)
             Page.RACE -> Icons.Flag(tint, s)
+            Page.FIRMWARE -> Icons.Usb(tint, s)
             Page.LAP_SOUND -> Icons.Speaker(tint, s)
             Page.SYNC -> Icons.Cloud(tint, s)
         }
@@ -215,6 +217,7 @@ fun SettingsScreen(state: TimerState, onBack: () -> Unit) {
                     ReadOnlyNote(state)
                     RaceDefaultsSection(draft, editable, edit)
                 }
+                Page.FIRMWARE -> FirmwarePage(state)
                 Page.LAP_SOUND -> LapSoundPage()
                 Page.SYNC -> SyncPage()
             }
@@ -363,6 +366,7 @@ private fun Page.summary(d: TimerSettings, cal: Calibration): String = when (thi
     ).joinToString(" · ").ifEmpty { "No event or heat name" }
     Page.RACE -> (if (d.raceLimit == RaceLimit.LAPS) laps(d.raceLaps) else "${Format.minutes(d.raceTimeS)} race") +
         " · BOOT arms " + if (d.mode == Mode.RACE) "a race" else "practice"
+    Page.FIRMWARE -> listOfNotNull(d.firmware.takeIf { it.isNotEmpty() }?.let { "v$it" }, d.board.takeIf { it.isNotEmpty() }).joinToString(" · ").ifEmpty { "Update over USB" }
     Page.LAP_SOUND, Page.SYNC -> ""
 }
 
@@ -374,7 +378,7 @@ private fun Page.changed(a: TimerSettings, b: TimerSettings): Boolean {
         Page.RADIO -> listOf(ble, espnow, bindPhrase)
         Page.MESSAGES -> listOf(msgEvent, event, msgHeat, heatPrefix, nextHeat, msgStart, textStage, textGo, textFinish, msgLaps, msgBest)
         Page.RACE -> listOf(raceLaps, raceTimeS, raceLimit, mode, randomHold)
-        Page.LAP_SOUND, Page.SYNC -> emptyList()
+        Page.FIRMWARE, Page.LAP_SOUND, Page.SYNC -> emptyList()
     }
     return a.fields() != b.fields()
 }
