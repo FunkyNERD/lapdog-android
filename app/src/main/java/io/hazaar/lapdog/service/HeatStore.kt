@@ -68,5 +68,23 @@ object HeatStore {
 
     fun get(id: Long) = _heats.value.firstOrNull { it.id == id }
 
+    /** Deletes these heats from the phone (their files too). Uploaded copies stay on the website. */
+    fun delete(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        val gone = ids.toSet()
+        _heats.update { list -> list.filter { it.id !in gone } }
+        val d = dir ?: return
+        scope.launch {
+            gone.forEach { id ->
+                if (!File(d, "$id.json").delete() && File(d, "$id.json").exists()) Log.w(TAG, "couldn't delete heat $id")
+            }
+        }
+    }
+
+    fun delete(id: Long) = delete(listOf(id))
+
+    /** Puts deleted heats back (undo): saved again as they were. */
+    fun restore(heats: Collection<HeatRecord>) = heats.forEach(::save)
+
     private const val TAG = "HeatStore"
 }

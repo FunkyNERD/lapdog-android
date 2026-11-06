@@ -57,6 +57,7 @@ object Icons {
     private val cloud = icon(
         "cloud", "M7 19h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 9.6A4.7 4.7 0 0 0 7 19z", "M12 16.5v-5", "M9.5 14l2.5-2.5 2.5 2.5",
     )
+    private val trash = icon("trash", "M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12", "M9 7V4h6v3")
     private val alert = icon("alert", "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z", "M12 8v5", "M12 16h.01")
 
     @Composable
@@ -67,6 +68,7 @@ object Icons {
     @Composable fun Bluetooth(tint: Color, size: Dp = 16.dp) = Draw(bluetooth, tint, size)
     @Composable fun Usb(tint: Color, size: Dp = 16.dp) = Draw(usb, tint, size)
     @Composable fun Alert(tint: Color, size: Dp = 16.dp) = Draw(alert, tint, size)
+    @Composable fun Trash(tint: Color, size: Dp = 18.dp) = Draw(trash, tint, size)
     @Composable fun Forward(tint: Color, size: Dp = 18.dp) = Draw(forward, tint, size)
     @Composable fun Share(tint: Color, size: Dp = 20.dp) = Draw(share, tint, size)
     @Composable fun Cross(tint: Color, size: Dp = 14.dp) = Draw(cross, tint, size)

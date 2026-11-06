@@ -7,6 +7,18 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -150,7 +162,21 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
     val pb = remember(heats) { PersonalBests.of(heats) }
     val shown = heats.filter { filter == 0 || it.isRace == (filter == 2) }
     val days = remember(shown) { groupByDay(shown, zone) }
+    // Deleted heats can be put back for a few seconds (a swipe is easy to do by accident).
+    var undo by remember { mutableStateOf<List<HeatRecord>?>(null) }
+    var askDeleteAll by remember { mutableStateOf(false) }
+    LaunchedEffect(undo) {
+        if (undo != null) {
+            delay(UNDO_MS)
+            undo = null
+        }
+    }
+    fun delete(list: List<HeatRecord>) {
+        HeatStore.delete(list.map { it.id })
+        undo = list
+    }
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -183,10 +209,29 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
             Segmented(
                 listOf("All" to null, "Practice" to null, "Race" to null),
                 filter, { filter = it },
-                Modifier.padding(top = 12.dp, bottom = 12.dp),
+                Modifier.padding(top = 12.dp),
                 height = 40.dp,
                 description = "Show",
             )
+        }
+        if (shown.isNotEmpty()) {
+            item(key = "delete-all") {
+                Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Label(
+                        (if (shown.size == 1) "1 heat" else "${shown.size} heats") + " · swipe one left to delete it",
+                        Modifier.weight(1f), size = 12,
+                    )
+                    Row(
+                        Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { askDeleteAll = true }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icons.Trash(Hud.slow, 16.dp)
+                        Text(deleteAllLabel(filter), style = body(13.sp, Hud.slow, FontWeight.SemiBold))
+                    }
+                }
+            }
         }
         if (days.isEmpty()) {
             item {
@@ -203,8 +248,103 @@ fun HistoryScreen(heats: List<HeatRecord>, onBack: () -> Unit, onOpen: (HeatReco
                     if (day.event.isNotEmpty()) Text(day.event, style = body(13.sp, Hud.muted), maxLines = 1)
                 }
             }
-            items(day.heats, key = { it.id }) { h -> HeatRow(h, text, pb.isBestLap(h)) { onOpen(h) } }
+            items(day.heats, key = { it.id }) { h ->
+                SwipeToDelete(onDelete = { delete(listOf(h)) }, modifier = Modifier.animateItem()) {
+                    HeatRow(h, text, pb.isBestLap(h)) { onOpen(h) }
+                }
+            }
         }
+        item(key = "undo-space") { Spacer(72.dp) } // room to scroll the last heat above the undo bar
+    }
+    undo?.let { gone ->
+        UndoBar(
+            if (gone.size == 1) "${gone[0].name} deleted" else "${gone.size} heats deleted",
+            Modifier.align(Alignment.BottomCenter),
+        ) {
+            HeatStore.restore(gone)
+            undo = null
+        }
+    }
+    }
+
+    if (askDeleteAll) {
+        val n = shown.size
+        HudDialog(if (filter == 0) "Delete all heats?" else "${deleteAllLabel(filter)}?", onDismiss = { askDeleteAll = false }) {
+            Text(
+                "Deletes ${if (n == 1) "1 heat" else "$n heats"} from this phone, personal bests with them. " +
+                    "Heats already uploaded stay on the website.",
+                style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
+            )
+            DialogButtons("DELETE", { askDeleteAll = false; delete(shown) }, { askDeleteAll = false })
+        }
+    }
+}
+
+private const val UNDO_MS = 5_000L
+
+private fun deleteAllLabel(filter: Int) = when (filter) {
+    1 -> "Delete all practice"
+    2 -> "Delete all race"
+    else -> "Delete all"
+}
+
+/**
+ * Swipe a heat left to delete it: a red "Delete" strip with a bin shows under the row as
+ * it's dragged, past 40 % the row slides away and the list closes up ([onDelete]); short of
+ * it, it springs back. TalkBack gets a "Delete heat" action instead.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDelete(onDelete: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            if (v == SwipeToDismissBoxValue.EndToStart) onDelete()
+            v == SwipeToDismissBoxValue.EndToStart
+        },
+        positionalThreshold = { it * 0.4f },
+    )
+    SwipeToDismissBox(
+        state = state,
+        modifier = modifier.semantics {
+            customActions = listOf(CustomAccessibilityAction("Delete heat") { onDelete(); true })
+        },
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val swiping = state.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            val p = if (swiping) state.progress.coerceIn(0f, 1f) else 0f
+            Row(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                    .background(if (swiping) Hud.slowBg else Color.Transparent)
+                    .border(1.dp, if (swiping) Hud.slowEdge else Color.Transparent, RoundedCornerShape(12.dp))
+                    .padding(end = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (swiping) {
+                    Text("Delete", style = body(14.sp, Hud.slow, FontWeight.SemiBold), modifier = Modifier.alpha((p * 2.5f).coerceAtMost(1f)))
+                    HSpacer(10.dp)
+                    Box(Modifier.scale(0.8f + 0.4f * p.coerceAtMost(0.5f) * 2)) { Icons.Trash(Hud.slow, 22.dp) }
+                }
+            }
+        },
+    ) { content() }
+}
+
+/** "Heat 4 deleted · UNDO", over the bottom of the list for a few seconds. */
+@Composable
+private fun UndoBar(text: String, modifier: Modifier, onUndo: () -> Unit) {
+    Row(
+        modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Hud.surface)
+            .border(1.dp, Hud.line, RoundedCornerShape(14.dp)).padding(start = 16.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = body(14.sp, Hud.text), modifier = Modifier.weight(1f))
+        Text(
+            "UNDO", style = heading(14.sp, Hud.accent),
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { onUndo() }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        )
     }
 }
 
