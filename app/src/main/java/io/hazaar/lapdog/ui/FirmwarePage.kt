@@ -42,6 +42,7 @@ fun FirmwarePage(state: TimerState) {
     val flash by TimerFlasher.state.collectAsStateWithLifecycle()
     val s = state.settings
     var images by remember { mutableStateOf<List<File>>(emptyList()) }
+    var confirm by remember { mutableStateOf<File?>(null) } // board not reported: ask first
     LaunchedEffect(flash.running) { images = TimerFlasher.images(context) }
     val canFlash = state.usbConnected && !state.armed && !flash.running
 
@@ -63,9 +64,26 @@ fun FirmwarePage(state: TimerState) {
         )
         if (images.isEmpty()) Text("No images found.", style = body(14.sp, Hud.textSoft))
         images.forEach { f ->
-            SecondaryButton("Write ${f.name} · ${f.length() / 1024} KB", { TimerFlasher.start(f) }, Modifier.fillMaxWidth(), enabled = canFlash)
+            SecondaryButton(
+                "Write ${f.name} · ${f.length() / 1024} KB",
+                { if (s?.board.isNullOrEmpty()) confirm = f else TimerFlasher.start(f) },
+                Modifier.fillMaxWidth(), enabled = canFlash,
+            )
         }
         if (state.armed) Text("Disarm the timer to update it.", style = body(13.sp, Hud.slow))
+    }
+
+    confirm?.let { f ->
+        val boardOf = f.name.substringBefore("-firmware").ifEmpty { f.name }
+        HudDialog("Is this a $boardOf?", onDismiss = { confirm = null }) {
+            Text(
+                "This timer's firmware is too old to say which board it is, and every LapDog board uses the same chip, " +
+                    "so the app can't check. Writing another board's image would leave the timer not working until it's " +
+                    "flashed again. Only go ahead if this really is a $boardOf.",
+                style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
+            )
+            DialogButtons("IT'S A ${boardOf.uppercase()}", { confirm = null; TimerFlasher.start(f) }, { confirm = null })
+        }
     }
 
     if (flash.log.isNotEmpty()) {
