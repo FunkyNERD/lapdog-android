@@ -46,7 +46,13 @@ import androidx.compose.ui.unit.sp
 import io.hazaar.lapdog.protocol.Format
 import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.LapFrame.Stage
+import io.hazaar.lapdog.protocol.Calibration
+import io.hazaar.lapdog.protocol.Presets
 import io.hazaar.lapdog.protocol.TimerSettings
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.state.HeatRecord
 import io.hazaar.lapdog.state.LapEntry
@@ -126,6 +132,7 @@ private fun UpdateBanner() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun IdleScreen(
     state: TimerState,
@@ -167,11 +174,35 @@ fun IdleScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (state.event.isNotEmpty()) SectionLabel(state.event)
+            // Long-press the heat name to start again from Heat 1, as on the touch timer.
+            val canReset = state.usbConnected && s != null && !state.armed
+            val haptic = LocalHapticFeedback.current
+            var askReset by remember { mutableStateOf(false) }
             Text(
                 state.nextHeat?.let { state.heatName(it) } ?: state.heatPrefix,
                 style = heading(40.sp, spacing = 0.em),
-                modifier = Modifier.semantics { heading() },
+                modifier = Modifier
+                    .semantics { heading() }
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        enabled = canReset,
+                        onClick = {},
+                        onLongClickLabel = "Reset the heat number to 1",
+                        onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); askReset = true },
+                    ),
             )
+            if (askReset) {
+                HudDialog("Back to ${state.heatName(1)}?", onDismiss = { askReset = false }) {
+                    Text(
+                        "The next heat the timer runs will be ${state.heatName(1)}. Heats already saved keep their numbers.",
+                        style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
+                    )
+                    DialogButtons("RESET", {
+                        askReset = false
+                        LapRepository.launch(listOf("set heat 1")) { LapRepository.fire("get") }
+                    }, { askReset = false })
+                }
+            }
             Label(
                 when {
                     s != null -> "Next heat, from the timer"
@@ -187,7 +218,7 @@ fun IdleScreen(
             InfoCard("Channel", s?.channelLabel ?: "—", s?.let { "${it.freqMhz} MHz" } ?: "", Modifier.weight(1f).fillMaxHeight())
             InfoCard(
                 "Sensitivity",
-                s?.sensitivity?.label?.uppercase() ?: "—",
+                s?.let { sensitivityLabel(it, state.calibration) } ?: "—",
                 s?.let { "+${it.enterDb.toInt()} / +${it.exitDb.toInt()} dB" } ?: "",
                 Modifier.weight(1f).fillMaxHeight(),
             )
@@ -608,4 +639,12 @@ private fun PanelRow(row: Int, text: String, state: TimerState) {
         Text("%02d".format(row), style = mono(13.sp, Hud.panelRowNo, FontWeight.Medium), modifier = Modifier.width(22.dp))
         Text(text, style = mono(13.sp, if (go) Hud.accent else Hud.panelText, FontWeight.Medium))
     }
+}
+
+/** "MED", "HIGH", "CUSTOM"...: relative to the timer's reference when it reports one (newer firmware). */
+private fun sensitivityLabel(s: TimerSettings, cal: Calibration): String {
+    val e = cal.refEnterDb
+    val x = cal.refExitDb
+    val label = if (e != null && x != null) Presets.of(s.enterDb, s.exitDb, e, x).label else s.sensitivity.label
+    return label.uppercase()
 }
