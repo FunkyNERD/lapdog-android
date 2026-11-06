@@ -110,12 +110,12 @@ fun CalibrationCard(state: TimerState, enabled: Boolean) {
     if (askClear) {
         HudDialog("Clear calibration?", onDismiss = { askClear = false }) {
             Text(
-                "The timer goes back to measuring from the room's level, with Medium sensitivity (+10 / +5 dB).",
+                "The timer goes back to its defaults: gain 20 and Medium sensitivity, measured from the receiver's typical floor.",
                 style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
             )
             DialogButtons("CLEAR", {
                 askClear = false
-                scope.launch { LapRepository.send("cal clear", "set exit 5", "set enter 10", "save"); LapRepository.refresh() }
+                scope.launch { LapRepository.send("cal clear"); LapRepository.refresh() } // the timer resets its thresholds
             }, { askClear = false })
         }
     }

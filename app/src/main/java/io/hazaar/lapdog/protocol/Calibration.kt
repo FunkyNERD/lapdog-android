@@ -26,6 +26,9 @@ data class Calibration(
     val livePasses: Int = 0,
     val flySeconds: Int = 0,
     val last: Result? = null,
+    /** The presets' Medium (enter/exit above the floor): calibrated, else the timer's defaults. Null from older firmware. */
+    val refEnterDb: Float? = null,
+    val refExitDb: Float? = null,
     private val pending: Map<String, String> = emptyMap(),
 ) {
     enum class Step { IDLE, FLOOR, FLY }
@@ -99,6 +102,10 @@ data class Calibration(
             copy(livePasses = n) to Event.Pass(n)
         }
         "cal.fly_s" -> copy(flySeconds = value.toIntOrNull() ?: flySeconds) to null
+        "cal.ref" -> {
+            val parts = value.split('/')
+            copy(refEnterDb = parts.getOrNull(0)?.toFloatOrNull(), refExitDb = parts.getOrNull(1)?.toFloatOrNull()) to null
+        }
         "cal.error" -> copy(step = Step.IDLE, round = 0, pending = emptyMap()) to Event.Failed(value)
         "cal.done" -> done(value)
         else -> copy(pending = pending + (key to value)) to null // result fields, warnings, ...

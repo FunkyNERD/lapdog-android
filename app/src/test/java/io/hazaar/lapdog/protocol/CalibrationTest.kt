@@ -44,6 +44,18 @@ class CalibrationTest {
     }
 
     @Test
+    fun presetReference() {
+        feed("S:cal=off", "S:cal.ref=20.0/13.0")
+        assertEquals(20f, c.refEnterDb!!, 0.01f)
+        assertEquals(13f, c.refExitDb!!, 0.01f)
+        assertEquals(Presets.Kind.MED, Presets.of(20f, 13f, 20f, 13f))
+        assertEquals(Presets.Kind.HIGH, Presets.of(17f, 10f, 20f, 13f))
+        assertEquals(Presets.Kind.CUSTOM, Presets.of(18f, 13f, 20f, 13f))
+        assertEquals(24.9f to 18.4f, Presets.apply(Presets.Kind.LOW, 21.9f, 15.4f).let { (e, x) -> (e * 10).toInt() / 10f to (x * 10).toInt() / 10f })
+        assertEquals(0f, Presets.apply(Presets.Kind.HIGH, 18f, 2f).second, 0.001f) // never under the floor
+    }
+
+    @Test
     fun floorSweep() {
         feed("S:cal=on", "S:cal.floor=-51.6")
         assertEquals(listOf(Event.FloorStarted), feed("S:cal.started=floor"))

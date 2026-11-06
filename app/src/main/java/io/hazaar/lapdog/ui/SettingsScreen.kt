@@ -63,6 +63,8 @@ import io.hazaar.lapdog.protocol.LapFrame.Mode
 import io.hazaar.lapdog.protocol.TimerSettings
 import io.hazaar.lapdog.protocol.TimerSettings.RaceLimit
 import io.hazaar.lapdog.protocol.TimerSettings.Sensitivity
+import io.hazaar.lapdog.protocol.Calibration
+import io.hazaar.lapdog.protocol.Presets
 import io.hazaar.lapdog.service.HeatStore
 import io.hazaar.lapdog.service.LapRepository
 import io.hazaar.lapdog.service.LapSound
@@ -79,7 +81,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val GRAPH_MAX_DB = 32f
-private const val GRAPH_MAX_CAL_DB = 48f // calibrated: passes ~30-40 dB over the floor
+private const val GRAPH_MAX_CAL_DB = 48f // from the receiver floor: passes ~30-40 dB over it
 
 /** One page per category; the list is the screen's home. [phone]: kept on this phone, not the timer. */
 private enum class Page(val title: String, val phone: Boolean = false) {
@@ -283,7 +285,7 @@ private fun CategoryList(state: TimerState, d: TimerSettings?, timer: TimerSetti
         timerPages.forEachIndexed { i, p ->
             CategoryRow(
                 p,
-                d?.let { p.summary(it, state.calibration.on) } ?: "Not read yet",
+                d?.let { p.summary(it, state.calibration) } ?: "Not read yet",
                 edited = d != null && timer != null && p.changed(d, timer),
                 divider = i < timerPages.lastIndex,
             ) { onOpen(p) }
@@ -339,10 +341,14 @@ private fun CategoryRow(p: Page, summary: String, edited: Boolean, divider: Bool
     }
 }
 
-private fun Page.summary(d: TimerSettings, calibrated: Boolean): String = when (this) {
+private fun Page.summary(d: TimerSettings, cal: Calibration): String = when (this) {
     Page.CHANNEL -> {
+        val e = cal.refEnterDb
+        val x = cal.refExitDb
+        val kind = if (e != null && x != null) Presets.of(d.enterDb, d.exitDb, e, x) else null
         val sens = when {
-            calibrated -> "calibrated"
+            kind != null -> listOfNotNull("calibrated".takeIf { cal.on }, (if (kind == Presets.Kind.MED) "Medium" else kind.label) + " sensitivity").joinToString(", ")
+            cal.on -> "calibrated"
             d.sensitivity == Sensitivity.MED -> "Medium sensitivity"
             else -> "${d.sensitivity.label} sensitivity"
         }
@@ -509,32 +515,58 @@ private fun ChannelSection(d: TimerSettings, enabled: Boolean, onChange: (TimerS
 @Composable
 private fun SensitivitySection(state: TimerState, d: TimerSettings, enabled: Boolean, onChange: (TimerSettings) -> Unit) {
     val rssi by LapRepository.rssi.collectAsStateWithLifecycle()
-    val calibrated = state.calibration.on
+    val cal = state.calibration
+    val calibrated = cal.on
+    val refEnter = cal.refEnterDb
+    val refExit = cal.refExitDb
+    // Newer timers measure from a fixed receiver floor and say what their presets step around.
+    val fromFloor = refEnter != null && refExit != null
     Section("Gate sensitivity") {
         CalibrationCard(state, enabled)
-        // The presets are for the room-level baseline; a calibrated timer measures from its floor.
-        val presets = Sensitivity.entries
-        if (!calibrated) Segmented(
-            presets.map { it.label to null },
-            presets.indexOf(d.sensitivity),
-            { i ->
-                val p = presets[i]
-                if (p != Sensitivity.CUSTOM) onChange(d.copy(enterDb = p.enterDb, exitDb = p.exitDb))
-            },
-            height = 40.dp,
-            enabled = enabled,
-            description = "Sensitivity preset",
-        )
+        if (refEnter != null && refExit != null) {
+            val kinds = Presets.Kind.entries
+            Segmented(
+                kinds.map { it.label to null },
+                kinds.indexOf(Presets.of(d.enterDb, d.exitDb, refEnter, refExit)),
+                { i ->
+                    val k = kinds[i]
+                    if (k != Presets.Kind.CUSTOM) Presets.apply(k, refEnter, refExit).let { (e, x) -> onChange(d.copy(enterDb = e, exitDb = x)) }
+                },
+                height = 40.dp,
+                enabled = enabled,
+                description = "Sensitivity preset",
+            )
+            Text(
+                (if (calibrated) "Med is what calibration set" else "Med is the timer's default") +
+                    " (+${fmtDb(refEnter)} / +${fmtDb(refExit)} dB). Low is 3 dB less sensitive, High 3 dB more.",
+                style = body(12.sp, Hud.muted).copy(lineHeight = 17.sp),
+            )
+        } else if (!calibrated) {
+            // Older timer firmware: fixed presets for its room-level baseline.
+            val presets = Sensitivity.entries
+            Segmented(
+                presets.map { it.label to null },
+                presets.indexOf(d.sensitivity),
+                { i ->
+                    val p = presets[i]
+                    if (p != Sensitivity.CUSTOM) onChange(d.copy(enterDb = p.enterDb, exitDb = p.exitDb))
+                },
+                height = 40.dp,
+                enabled = enabled,
+                description = "Sensitivity preset",
+            )
+        }
         HudCard(radius = 14.dp, padding = 14.dp, spacing = 10.dp) {
             Row {
                 Text("Live signal · ${d.channelLabel}", style = body(13.sp, Hud.muted), modifier = Modifier.weight(1f))
                 Text(rssi.maxOrNull()?.let { "peak +${it.roundToInt()} dB" } ?: "no signal yet", style = mono(13.sp, weight = FontWeight.Medium))
             }
-            SignalGraph(rssi, d.enterDb, d.exitDb, enabled, if (calibrated) GRAPH_MAX_CAL_DB else GRAPH_MAX_DB) { enter, exit ->
+            SignalGraph(rssi, d.enterDb, d.exitDb, enabled, if (fromFloor || calibrated) GRAPH_MAX_CAL_DB else GRAPH_MAX_DB) { enter, exit ->
                 onChange(d.copy(enterDb = enter, exitDb = exit))
             }
             Text(
                 if (calibrated) "dB above the receiver floor. Calibration set the lines; drag them to fine-tune."
+                else if (fromFloor) "dB above the receiver floor. Calibrate to set the lines for your gate, or drag them."
                 else "Fly a few passes, then drag the lines: enter just under your peaks, exit a little above the floor.",
                 style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
             )
