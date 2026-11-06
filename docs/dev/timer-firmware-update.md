@@ -329,3 +329,29 @@ method 2 or 3. From then on, method 1 handles every update.
   method 3 if 2 fails.
 - An update interrupted by pulling the cable mid-write can be finished with **Try again**.
 - The unit tests above pass, and `./gradlew test` runs in CI.
+
+### Spike results (2026-11-06, C5 mini, from the phone)
+
+**Question 2 answered: esptool's DTR/RTS entry works through `usb-serial-for-android`.**
+The app's test page (Settings, tap the Timer connected card) flashed the mini's app image from
+the phone, on firmware 0.5.0, which has no `bootloader` command and no `S:board`:
+1. `UsbTransport.exclusive()` took the port from the lap transport;
+2. `EspLoader` (`flash/`): the USB-Serial/JTAG reset with the lines set in esptool's order (RTS up
+   before DTR down), SYNC, chip id 23, SPI_ATTACH and SPI_SET_PARAMS (4 MB), FLASH_DEFL_BEGIN at
+   `0x10000`, 1 KB deflated blocks, SPI_FLASH_MD5 checked, then the RTS hard reset. No
+   FLASH_DEFL_END.
+3. The timer came back running the new image, settings intact.
+
+**Question 4 answered: no re-enumeration, no new permission.** From the phone's log: the port was
+handed over at 15:02:28-ish and back at 15:02:54, and the same USB device
+(`/dev/bus/usb/002/059`) was reopened at 15:02:56, with no Removed/Added in between. Android
+didn't ask for permission again.
+
+**Question 3: fast enough.** Under ~25 s from opening the port to done for the 1.3 MB image.
+
+**Found: older firmware can't be checked against the image.** Every board is an ESP32-C5 (the 1.47"
+one also has 4 MB), so the chip id and flash size can't tell a mini from a 1.47" board. Without
+`S:board` (firmware 0.5.0 and older) the app now asks "Is this a <board>?" before writing.
+
+**So:** method 2 is the way in for every firmware version, and BOOT is only the recovery path.
+Next: the website serves the app images (lapdog-web), and the timer page offers the update.
