@@ -13,8 +13,8 @@ android {
         applicationId = "io.hazaar.lapdog"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.4.1"
+        versionCode = 10
+        versionName = "0.4.2"
     }
 
     // Release builds are signed with the LapDog release key when LAPDOG_KEYSTORE points at it
