@@ -1,6 +1,9 @@
 package io.hazaar.lapdog.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +50,7 @@ import kotlinx.coroutines.launch
  * any other version to install (rolling back), all from the website and written over USB
  * (lapdog-android#3). Firmware too old to say its board asks which it is first.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FirmwarePage(state: TimerState) {
     val flash by TimerFlasher.state.collectAsStateWithLifecycle()
@@ -60,6 +65,14 @@ fun FirmwarePage(state: TimerState) {
     val scope = rememberCoroutineScope()
     val canInstall = state.usbConnected && !state.armed && !flash.running && s != null && board.isNotEmpty()
     val current = s?.firmware.orEmpty()
+
+    val progressView = remember { BringIntoViewRequester() }
+    LaunchedEffect(flash.running) {
+        if (flash.running) {
+            showAll = false
+            progressView.bringIntoView()
+        }
+    }
 
     fun install(r: FirmwareRelease) {
         val older = current.isNotEmpty() && compareVersions(r.version, current) < 0
@@ -76,7 +89,33 @@ fun FirmwarePage(state: TimerState) {
         if (state.armed) Text("Disarm the timer to update it.", style = body(13.sp, Hud.slow))
     }
 
-    if (s != null && reported.isEmpty() && index.boards.isNotEmpty()) {
+    // While it installs, its progress goes right under the timer, in view; the version
+    // list folds away so the page doesn't look idle.
+    if (flash.log.isNotEmpty()) {
+        HudCard(Modifier.bringIntoViewRequester(progressView), radius = 14.dp, padding = 16.dp, spacing = 8.dp) {
+            Text(
+                flash.stage, style = heading(16.sp, if (flash.ok == false) Hud.slow else if (flash.ok == true) Hud.ok else Hud.text),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            flash.progress?.let { p ->
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Hud.line)) {
+                    Box(Modifier.fillMaxWidth(p.coerceIn(0.02f, 1f)).fillMaxHeight().background(Hud.accent))
+                }
+                Text("${(p * 100).toInt()} %", style = mono(13.sp, Hud.muted))
+            }
+            if (flash.ok == false) Text(
+                "The timer still has a working bootloader: try again, or unplug it and plug it in again first. " +
+                    "The browser flasher on the website can always reinstall it.",
+                style = body(13.sp, Hud.textSoft).copy(lineHeight = 19.sp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                flash.log.forEach { Text(it, style = mono(12.sp, Hud.textSoft)) }
+            }
+        }
+    }
+
+
+    if (s != null && reported.isEmpty() && index.boards.isNotEmpty() && !flash.running) {
         HudCard(radius = 14.dp, padding = 16.dp, spacing = 10.dp) {
             Text("Which timer is this?", style = heading(16.sp))
             Text(
@@ -92,7 +131,7 @@ fun FirmwarePage(state: TimerState) {
 
     val versions = if (board.isNotEmpty()) index.versions(board) else emptyList()
     val newest = versions.firstOrNull()
-    if (board.isNotEmpty()) {
+    if (board.isNotEmpty() && !flash.running) {
         HudCard(radius = 14.dp, padding = 16.dp, spacing = 10.dp) {
             when {
                 newest == null -> {
@@ -137,29 +176,6 @@ fun FirmwarePage(state: TimerState) {
                 versions.forEach { r ->
                     VersionRow(r, isCurrent = r.version == current, enabled = canInstall) { install(r) }
                 }
-            }
-        }
-    }
-
-    if (flash.log.isNotEmpty()) {
-        HudCard(radius = 14.dp, padding = 16.dp, spacing = 8.dp) {
-            Text(
-                flash.stage, style = heading(16.sp, if (flash.ok == false) Hud.slow else if (flash.ok == true) Hud.ok else Hud.text),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-            flash.progress?.let { p ->
-                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Hud.line)) {
-                    Box(Modifier.fillMaxWidth(p.coerceIn(0.02f, 1f)).fillMaxHeight().background(Hud.accent))
-                }
-                Text("${(p * 100).toInt()} %", style = mono(13.sp, Hud.muted))
-            }
-            if (flash.ok == false) Text(
-                "The timer still has a working bootloader: try again, or unplug it and plug it in again first. " +
-                    "The browser flasher on the website can always reinstall it.",
-                style = body(13.sp, Hud.textSoft).copy(lineHeight = 19.sp),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                flash.log.forEach { Text(it, style = mono(12.sp, Hud.textSoft)) }
             }
         }
     }
