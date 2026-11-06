@@ -184,14 +184,15 @@ fun FirmwarePage(state: TimerState) {
         val older = current.isNotEmpty() && compareVersions(r.version, current) < 0
         HudDialog(if (older) "Install the older v${r.version}?" else "Is this a $board?", onDismiss = { confirm = null }) {
             if (reported.isEmpty()) Text(
-                "This timer can't say which board it is. Only go ahead if it really is a $board: the wrong board's firmware leaves it not working until it's flashed again.",
+                "Installs v${r.version} for a $board. This timer can't say which board it is, so only go ahead if it really is a $board: the wrong board's firmware leaves it not working until it's flashed again.",
                 style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
             )
             if (older) Text(
                 "Going back from v$current to v${r.version}: if the older version saved its settings differently, the timer starts from its defaults, and versions before 0.6 don't know about calibration, so it would need calibrating again after updating. Updating forward again keeps whatever it has then.",
                 style = body(14.sp, Hud.textSoft).copy(lineHeight = 20.sp),
             )
-            DialogButtons("INSTALL v${r.version}", { confirm = null; TimerFlasher.install(board, r) }, { confirm = null })
+            // The version is in the title or the text: "INSTALL v0.5.0" wraps in a half-width button.
+            DialogButtons("INSTALL", { confirm = null; TimerFlasher.install(board, r) }, { confirm = null })
         }
     }
 }
