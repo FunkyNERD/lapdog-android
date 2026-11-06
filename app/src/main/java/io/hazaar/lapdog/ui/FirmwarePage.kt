@@ -115,7 +115,7 @@ fun FirmwarePage(state: TimerState) {
     }
 
 
-    if (s != null && reported.isEmpty() && index.boards.isNotEmpty() && !flash.running) {
+    if (s != null && reported.isEmpty() && index.currentTimerBoards.isNotEmpty() && !flash.running) {
         HudCard(radius = 14.dp, padding = 16.dp, spacing = 10.dp) {
             Text("Which timer is this?", style = heading(16.sp))
             Text(
@@ -123,8 +123,8 @@ fun FirmwarePage(state: TimerState) {
                     "The wrong board's firmware leaves it not working until it's flashed again.",
                 style = body(13.sp, Hud.muted).copy(lineHeight = 19.sp),
             )
-            index.boards.forEach { b ->
-                ChoiceChip(b, picked == b, { picked = b })
+            index.currentTimerBoards.forEach { b ->
+                ChoiceChip(index.nameOf(b), picked == b, { picked = b })
             }
         }
     }
@@ -137,7 +137,7 @@ fun FirmwarePage(state: TimerState) {
                 newest == null -> {
                     Text("No releases found", style = heading(16.sp))
                     Text(
-                        if (index.boards.isEmpty()) "The app hasn't been able to reach the website yet."
+                        if (index.devices.isEmpty()) "The app hasn't been able to reach the website yet."
                         else "The website has no firmware for a $board.",
                         style = body(13.sp, Hud.muted),
                     )

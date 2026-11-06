@@ -30,12 +30,26 @@ data class FirmwareRelease(
     val url: String = "",
 )
 
-/** Board id ("c5-mini", ...) to its releases, newest first. */
+/** What a board is, from the website: its product (the timer or the LCD dashboard) and whether the newest release has it. */
 @Serializable
-data class FirmwareIndex(val devices: Map<String, List<FirmwareRelease>> = emptyMap()) {
+data class BoardInfo(val product: String = "", val repo: String = "", val name: String = "", val current: Boolean = true)
+
+/** Board id ("c5-mini", ...) to its releases, newest first; [boards] says what each one is. */
+@Serializable
+data class FirmwareIndex(
+    val devices: Map<String, List<FirmwareRelease>> = emptyMap(),
+    val boards: Map<String, BoardInfo> = emptyMap(),
+) {
     fun versions(board: String): List<FirmwareRelease> = devices[board].orEmpty()
     fun latest(board: String): FirmwareRelease? = versions(board).firstOrNull()
-    val boards get() = devices.keys.sorted()
+
+    /** The timer's boards (not the LCD dashboard's); every board from a website that doesn't say. */
+    private val timerBoards get() = devices.keys.filter { b -> boards[b]?.let { it.repo == TIMER_REPO } ?: boards.isEmpty() }
+
+    /** Today's timer boards, for asking which one an older timer is. */
+    val currentTimerBoards get() = timerBoards.filter { boards[it]?.current ?: true }.sorted()
+
+    fun nameOf(board: String) = boards[board]?.name?.ifEmpty { null } ?: board
 
     /**
      * The update to offer a timer on [firmware] (its S:fw), or null: the newest release for
@@ -46,10 +60,13 @@ data class FirmwareIndex(val devices: Map<String, List<FirmwareRelease>> = empty
     fun offer(board: String?, firmware: String, skipped: String?): FirmwareRelease? {
         if (firmware.isEmpty()) return null
         val newest = if (!board.isNullOrEmpty()) latest(board)
-        else devices.values.mapNotNull { it.firstOrNull() }.maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
+        else timerBoards.mapNotNull { latest(it) }.maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
         return newest?.takeIf { isNewer(it.version, firmware) && it.version != skipped }
     }
 }
+
+/** The timer firmware's repo, as the website's versions.json names it (the LCD dashboard has its own). */
+const val TIMER_REPO = "jamie/lapdog-firmware"
 
 /** MAJOR.MINOR.PATCH order, like compareTo. */
 fun compareVersions(a: String, b: String): Int = when {

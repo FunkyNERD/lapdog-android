@@ -38,6 +38,22 @@ class TimerFirmwareTest {
     }
 
     @Test
+    fun anOldTimerIsNeverOfferedTheDashboardsFirmware() {
+        val withLcd = FirmwareIndex(
+            idx.devices + ("crowpanel-7" to listOf(r("1.8.0"))),
+            mapOf(
+                "c5-mini" to BoardInfo("LapDog timer", TIMER_REPO, "ESP32-C5 mini (timer)", true),
+                "c5-lcd147" to BoardInfo("LapDog timer", TIMER_REPO, "1.47\" LCD (timer)", true),
+                "c3-oled" to BoardInfo("LapDog timer", TIMER_REPO, "C3 OLED (test)", false),
+                "crowpanel-7" to BoardInfo("LapDog LCD", "jamie/lapdog-lcd", "CrowPanel 7\"", true),
+            ),
+        )
+        assertEquals("0.6.0", withLcd.offer(null, "0.5.0", null)?.version) // not the LCD's 1.8.0
+        assertEquals(listOf("c5-lcd147", "c5-mini"), withLcd.currentTimerBoards) // no C3, no dashboard
+        assertEquals("ESP32-C5 mini (timer)", withLcd.nameOf("c5-mini"))
+    }
+
+    @Test
     fun versionOrder() {
         assertEquals(1, compareVersions("0.10.0", "0.9.9"))
         assertEquals(-1, compareVersions("0.4.2", "0.5.0"))
@@ -50,6 +66,6 @@ class TimerFirmwareTest {
             "sha256":"4693fa24ab89d987bf7fdd73dbdd57716769cd7ed2b10ac67d47ffbc1d1f0812","url":"/flash/c5-mini/0.5.0/firmware.bin","extra":1}]}}"""
         val i = Json { ignoreUnknownKeys = true }.decodeFromString<FirmwareIndex>(s)
         assertEquals(1294384L, i.latest("c5-mini")!!.size)
-        assertEquals(listOf("c5-mini"), i.boards)
+        assertEquals(listOf("c5-mini"), i.currentTimerBoards) // a website that doesn't describe its boards
     }
 }
