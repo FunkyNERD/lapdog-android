@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
@@ -62,6 +63,17 @@ class LapService : LifecycleService() {
                 }.first { !it }
                 ServiceCompat.stopForeground(this@LapService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
+            }
+            // A guided calibration also holds a partial wake lock: if the screen does go
+            // off (power button, app left), the CPU and the USB link stay up for it.
+            jobs += lifecycleScope.launch {
+                val pm = getSystemService(PowerManager::class.java)
+                val lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lapdog:calibration").apply { setReferenceCounted(false) }
+                try {
+                    CalibrationGuide.active.collect { on -> if (on) lock.acquire(10 * 60_000L) else if (lock.isHeld) lock.release() }
+                } finally {
+                    if (lock.isHeld) lock.release()
+                }
             }
             LapRepository.setRunning(true)
             // BLE scanning needs the runtime permission; without it, USB still works.
